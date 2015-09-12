@@ -374,30 +374,28 @@ public abstract class Loader {
             final boolean returnProxies,
             final ResultTransformer forcedResultTransformer)
             throws HibernateException {
-        // TODO jakobk: persistenceContext
-//        final PersistenceContext persistenceContext = asyncSession.getPersistenceContext();
-//        boolean defaultReadOnlyOrig = persistenceContext.isDefaultReadOnly();
-//        if ( queryParameters.isReadOnlyInitialized() ) {
-//            // The read-only/modifiable mode for the query was explicitly set.
-//            // Temporarily set the default read-only/modifiable setting to the query's setting.
-//            persistenceContext.setDefaultReadOnly( queryParameters.isReadOnly() );
-//        }
-//        else {
-//            // The read-only/modifiable setting for the query was not initialized.
-//            // Use the default read-only/modifiable from the persistence context instead.
-//            queryParameters.setReadOnly( persistenceContext.isDefaultReadOnly() );
-            queryParameters.setReadOnly( true );
-//        }
-//        persistenceContext.beforeLoad();
+        final PersistenceContext persistenceContext = asyncSession.getPersistenceContext();
+        boolean defaultReadOnlyOrig = persistenceContext.isDefaultReadOnly();
+        if ( queryParameters.isReadOnlyInitialized() ) {
+            // The read-only/modifiable mode for the query was explicitly set.
+            // Temporarily set the default read-only/modifiable setting to the query's setting.
+            persistenceContext.setDefaultReadOnly( queryParameters.isReadOnly() );
+        }
+        else {
+            // The read-only/modifiable setting for the query was not initialized.
+            // Use the default read-only/modifiable from the persistence context instead.
+            queryParameters.setReadOnly( persistenceContext.isDefaultReadOnly() );
+        }
+        persistenceContext.beforeLoad();
         return doQueryAsync( asyncSession, queryParameters, returnProxies, forcedResultTransformer )
                 .handle((result, throwable) -> {
-//                    try {
-//                        persistenceContext.afterLoad();
-//                        persistenceContext.initializeNonLazyCollections();
-//                    } finally {
-//                        // Restore the original default
-//                        persistenceContext.setDefaultReadOnly( defaultReadOnlyOrig );
-//                    }
+                    try {
+                        persistenceContext.afterLoad();
+                        persistenceContext.initializeNonLazyCollections();
+                    } finally {
+                        // Restore the original default
+                        persistenceContext.setDefaultReadOnly( defaultReadOnlyOrig );
+                    }
                     if (result != null) {
                         return result;
                     } else {
