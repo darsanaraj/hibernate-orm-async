@@ -32,6 +32,7 @@ import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 
 import org.hibernate.HibernateException;
@@ -40,6 +41,7 @@ import org.hibernate.LockOptions;
 import org.hibernate.QueryException;
 import org.hibernate.ScrollableResults;
 import org.hibernate.dialect.Dialect;
+import org.hibernate.engine.spi.AsyncSessionImplementor;
 import org.hibernate.engine.spi.QueryParameters;
 import org.hibernate.engine.spi.SessionFactoryImplementor;
 import org.hibernate.engine.spi.SessionImplementor;
@@ -496,6 +498,11 @@ public class QueryLoader extends BasicLoader {
 		checkQuery( queryParameters );
 		return list( session, queryParameters, queryTranslator.getQuerySpaces(), queryReturnTypes );
 	}
+
+    public CompletableFuture<List> listAsync(AsyncSessionImplementor asyncSession, QueryParameters queryParameters) {
+        checkQuery( queryParameters );
+        return listAsync( asyncSession, queryParameters, queryTranslator.getQuerySpaces(), queryReturnTypes );
+    }
 
 	private void checkQuery(QueryParameters queryParameters) {
 		if ( hasSelectNew() && queryParameters.getResultTransformer() != null ) {

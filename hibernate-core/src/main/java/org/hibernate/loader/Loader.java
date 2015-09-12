@@ -38,6 +38,7 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 
 import org.hibernate.AssertionFailure;
@@ -63,6 +64,7 @@ import org.hibernate.dialect.pagination.NoopLimitHandler;
 import org.hibernate.engine.internal.CacheHelper;
 import org.hibernate.engine.internal.TwoPhaseLoad;
 import org.hibernate.engine.jdbc.ColumnNameCache;
+import org.hibernate.engine.spi.AsyncSessionImplementor;
 import org.hibernate.engine.spi.EntityEntry;
 import org.hibernate.engine.spi.EntityKey;
 import org.hibernate.engine.spi.EntityUniqueKey;
@@ -365,6 +367,48 @@ public abstract class Loader {
 		}
 		return result;
 	}
+
+    public CompletableFuture<List> doQueryAndInitializeNonLazyCollectionsAsync(
+            final AsyncSessionImplementor asyncSession,
+            final QueryParameters queryParameters,
+            final boolean returnProxies,
+            final ResultTransformer forcedResultTransformer)
+            throws HibernateException {
+        // TODO jakobk: persistenceContext
+//        final PersistenceContext persistenceContext = asyncSession.getPersistenceContext();
+//        boolean defaultReadOnlyOrig = persistenceContext.isDefaultReadOnly();
+//        if ( queryParameters.isReadOnlyInitialized() ) {
+//            // The read-only/modifiable mode for the query was explicitly set.
+//            // Temporarily set the default read-only/modifiable setting to the query's setting.
+//            persistenceContext.setDefaultReadOnly( queryParameters.isReadOnly() );
+//        }
+//        else {
+//            // The read-only/modifiable setting for the query was not initialized.
+//            // Use the default read-only/modifiable from the persistence context instead.
+//            queryParameters.setReadOnly( persistenceContext.isDefaultReadOnly() );
+            queryParameters.setReadOnly( true );
+//        }
+//        persistenceContext.beforeLoad();
+        return doQueryAsync( asyncSession, queryParameters, returnProxies, forcedResultTransformer )
+                .handle((result, throwable) -> {
+//                    try {
+//                        persistenceContext.afterLoad();
+//                        persistenceContext.initializeNonLazyCollections();
+//                    } finally {
+//                        // Restore the original default
+//                        persistenceContext.setDefaultReadOnly( defaultReadOnlyOrig );
+//                    }
+                    if (result != null) {
+                        return result;
+                    } else {
+                        if (throwable instanceof RuntimeException) {
+                            throw (RuntimeException) throwable;
+                        } else {
+                            throw new RuntimeException(throwable);
+                        }
+                    }
+                });
+    }
 
 	/**
 	 * Loads a single row from the result set.  This is the processing used from the
@@ -926,6 +970,29 @@ public abstract class Loader {
 		}
 
 	}
+
+    private CompletableFuture<List> doQueryAsync(
+            final AsyncSessionImplementor asyncSession,
+            final QueryParameters queryParameters,
+            final boolean returnProxies,
+            final ResultTransformer forcedResultTransformer) throws HibernateException {
+
+        final RowSelection selection = queryParameters.getRowSelection();
+        final int maxRows = LimitHelper.hasMaxRows( selection ) ?
+                selection.getMaxRows() :
+                Integer.MAX_VALUE;
+
+        final List<AfterLoadAction> afterLoadActions = new ArrayList<AfterLoadAction>();
+
+        return executeQueryStatementAsync( queryParameters, false, afterLoadActions, asyncSession )
+                .thenApply(rs -> {
+                    try {
+                        return processResultSet( rs, queryParameters, asyncSession, returnProxies, forcedResultTransformer, maxRows, afterLoadActions );
+                    } catch (SQLException e) {
+                        throw new RuntimeException(e);
+                    }
+                });
+    }
 
 	protected List processResultSet(
 			ResultSet rs,
@@ -1839,6 +1906,14 @@ public abstract class Loader {
 		return executeQueryStatement( getSQLString(), queryParameters, scroll, afterLoadActions, session );
 	}
 
+    protected CompletableFuture<ResultSet> executeQueryStatementAsync(
+            final QueryParameters queryParameters,
+            final boolean scroll,
+            List<AfterLoadAction> afterLoadActions,
+            final AsyncSessionImplementor asyncSession) {
+        return executeQueryStatementAsync(getSQLString(), queryParameters, scroll, afterLoadActions, asyncSession);
+    }
+
 	protected SqlStatementWrapper executeQueryStatement(
 			String sqlStatement,
 			QueryParameters queryParameters,
@@ -1861,6 +1936,29 @@ public abstract class Loader {
 		final PreparedStatement st = prepareQueryStatement( sql, queryParameters, limitHandler, scroll, session );
 		return new SqlStatementWrapper( st, getResultSet( st, queryParameters.getRowSelection(), limitHandler, queryParameters.hasAutoDiscoverScalarTypes(), session ) );
 	}
+
+    protected CompletableFuture<ResultSet> executeQueryStatementAsync(
+            String sqlStatement,
+            QueryParameters queryParameters,
+            boolean scroll,
+            List<AfterLoadAction> afterLoadActions,
+            AsyncSessionImplementor asyncSession) {
+
+        // Processing query filters.
+        queryParameters.processFilters( sqlStatement, asyncSession );
+
+        // Applying LIMIT clause.
+        final LimitHandler limitHandler = getLimitHandler(
+                queryParameters.getRowSelection()
+        );
+        String sql = limitHandler.processSql( queryParameters.getFilteredSQL(), queryParameters.getRowSelection() );
+
+        // Adding locks and comments.
+        sql = preprocessSQL( sql, queryParameters, getFactory().getDialect(), afterLoadActions );
+
+        final PreparedStatement st = prepareQueryStatementAsync( sql, queryParameters, limitHandler, asyncSession);
+        return getResultSetAsync( st, queryParameters.getRowSelection(), limitHandler, queryParameters.hasAutoDiscoverScalarTypes(), asyncSession );
+    }
 
 	/**
 	 * Obtain a <tt>PreparedStatement</tt> with all parameters pre-bound.
@@ -1887,67 +1985,86 @@ public abstract class Loader {
 				scrollMode
 		);
 
-		try {
-
-			int col = 1;
-			//TODO: can we limit stored procedures ?!
-			col += limitHandler.bindLimitParametersAtStartOfQuery( selection, st, col );
-
-			if (callable) {
-				col = dialect.registerResultSetOutParameter( (CallableStatement)st, col );
-			}
-
-			col += bindParameterValues( st, queryParameters, col, session );
-
-			col += limitHandler.bindLimitParametersAtEndOfQuery( selection, st, col );
-
-			limitHandler.setMaxRows( selection, st );
-
-			if ( selection != null ) {
-				if ( selection.getTimeout() != null ) {
-					st.setQueryTimeout( selection.getTimeout() );
-				}
-				if ( selection.getFetchSize() != null ) {
-					st.setFetchSize( selection.getFetchSize() );
-				}
-			}
-
-			// handle lock timeout...
-			LockOptions lockOptions = queryParameters.getLockOptions();
-			if ( lockOptions != null ) {
-				if ( lockOptions.getTimeOut() != LockOptions.WAIT_FOREVER ) {
-					if ( !dialect.supportsLockTimeouts() ) {
-						if ( LOG.isDebugEnabled() ) {
-							LOG.debugf(
-									"Lock timeout [%s] requested but dialect reported to not support lock timeouts",
-									lockOptions.getTimeOut()
-							);
-						}
-					}
-					else if ( dialect.isLockTimeoutParameterized() ) {
-						st.setInt( col++, lockOptions.getTimeOut() );
-					}
-				}
-			}
-
-			if ( LOG.isTraceEnabled() )
-			   LOG.tracev( "Bound [{0}] parameters total", col );
-		}
-		catch ( SQLException sqle ) {
-			session.getJdbcCoordinator().getResourceRegistry().release( st );
-			session.getJdbcCoordinator().afterStatementExecution();
-			throw sqle;
-		}
-		catch ( HibernateException he ) {
-			session.getJdbcCoordinator().getResourceRegistry().release( st );
-			session.getJdbcCoordinator().afterStatementExecution();
-			throw he;
-		}
-
-		return st;
+        return populatePreparedStatement(queryParameters, limitHandler, session, dialect, selection, callable, st);
 	}
 
-	/**
+    protected final PreparedStatement prepareQueryStatementAsync(
+            String sql,
+            final QueryParameters queryParameters,
+            final LimitHandler limitHandler,
+            final AsyncSessionImplementor asyncSession) throws HibernateException {
+        final Dialect dialect = getFactory().getDialect();
+        final RowSelection selection = queryParameters.getRowSelection();
+        boolean callable = queryParameters.isCallable();
+
+        PreparedStatement st = asyncSession.createRecordingPreparedStatement(sql);
+
+        try {
+            return populatePreparedStatement(queryParameters, limitHandler, asyncSession, dialect, selection, callable, st);
+        } catch (SQLException e) {
+            throw new HibernateException(e);
+        }
+    }
+
+    private PreparedStatement populatePreparedStatement(QueryParameters queryParameters, LimitHandler limitHandler,
+                                                        SessionImplementor session, Dialect dialect, RowSelection selection,
+                                                        boolean callable, PreparedStatement st) throws SQLException {
+        try {
+
+            int col = 1;
+            //TODO: can we limit stored procedures ?!
+            col += limitHandler.bindLimitParametersAtStartOfQuery( selection, st, col );
+
+            if (callable) {
+                col = dialect.registerResultSetOutParameter( (CallableStatement)st, col );
+            }
+
+            col += bindParameterValues( st, queryParameters, col, session );
+
+            col += limitHandler.bindLimitParametersAtEndOfQuery( selection, st, col );
+
+            limitHandler.setMaxRows( selection, st );
+
+            if ( selection != null ) {
+                if ( selection.getTimeout() != null ) {
+                    st.setQueryTimeout( selection.getTimeout() );
+                }
+                if ( selection.getFetchSize() != null ) {
+                    st.setFetchSize( selection.getFetchSize() );
+                }
+            }
+
+            // handle lock timeout...
+            LockOptions lockOptions = queryParameters.getLockOptions();
+            if ( lockOptions != null ) {
+                if ( lockOptions.getTimeOut() != LockOptions.WAIT_FOREVER ) {
+                    if ( !dialect.supportsLockTimeouts() ) {
+                        if ( LOG.isDebugEnabled() ) {
+                            LOG.debugf(
+                                    "Lock timeout [%s] requested but dialect reported to not support lock timeouts",
+                                    lockOptions.getTimeOut()
+                            );
+                        }
+                    }
+                    else if ( dialect.isLockTimeoutParameterized() ) {
+                        st.setInt( col++, lockOptions.getTimeOut() );
+                    }
+                }
+            }
+
+            if ( LOG.isTraceEnabled() )
+               LOG.tracev( "Bound [{0}] parameters total", col );
+        }
+        catch ( SQLException | HibernateException sqle ) {
+            session.getJdbcCoordinator().getResourceRegistry().release( st );
+            session.getJdbcCoordinator().afterStatementExecution();
+            throw sqle;
+        }
+
+        return st;
+    }
+
+    /**
 	 * Bind all parameter values into the prepared statement in preparation
 	 * for execution.
 	 *
@@ -2082,6 +2199,31 @@ public abstract class Loader {
 			throw sqle;
 		}
 	}
+
+    protected final CompletableFuture<ResultSet> getResultSetAsync(
+            final PreparedStatement st,
+            final RowSelection selection,
+            final LimitHandler limitHandler,
+            final boolean autodiscovertypes,
+            final AsyncSessionImplementor asyncSession)
+            throws HibernateException {
+
+        return asyncSession.executeQueryAsync(st)
+                .thenApply(rs -> {
+                    try {
+                        if ( !limitHandler.supportsLimitOffset() || !LimitHelper.useLimit( limitHandler, selection ) ) {
+                            advance( rs, selection );
+                        }
+
+                        if ( autodiscovertypes ) {
+                            autoDiscoverTypes( rs );
+                        }
+                        return rs;
+                    } catch (SQLException e) {
+                        throw new HibernateException(e);
+                    }
+                });
+    }
 
 	protected void autoDiscoverTypes(ResultSet rs) {
 		throw new AssertionFailure("Auto discover types not supported in this loader");
@@ -2261,7 +2403,7 @@ public abstract class Loader {
 
 		if ( LOG.isDebugEnabled() )
 			LOG.debugf( "Loading collection: %s",
-					MessageHelper.collectionInfoString( getCollectionPersisters()[0], id, getFactory() ) );
+					MessageHelper.collectionInfoString(getCollectionPersisters()[0], id, getFactory()) );
 
 		Serializable[] ids = new Serializable[]{id};
 		try {
@@ -2368,8 +2510,23 @@ public abstract class Loader {
 		}
 	}
 
+	protected CompletableFuture<List> listAsync(
+			final AsyncSessionImplementor asyncSession,
+			final QueryParameters queryParameters,
+			final Set<Serializable> querySpaces,
+			final Type[] resultTypes) throws HibernateException {
+
+        // TODO use cache if possible (see sync method)
+        return listIgnoreQueryCacheAsync( asyncSession, queryParameters );
+	}
+
 	private List listIgnoreQueryCache(SessionImplementor session, QueryParameters queryParameters) {
-		return getResultList( doList( session, queryParameters ), queryParameters.getResultTransformer() );
+		return getResultList(doList(session, queryParameters), queryParameters.getResultTransformer());
+	}
+
+	private CompletableFuture<List> listIgnoreQueryCacheAsync(AsyncSessionImplementor session, QueryParameters queryParameters) {
+        return doListAsync( session, queryParameters, null )
+                .thenApply(list -> getResultList(list, queryParameters.getResultTransformer()));
 	}
 
 	private List listUsingQueryCache(
@@ -2426,27 +2583,27 @@ public abstract class Loader {
 			);
 		}
 
-		return getResultList( result, queryParameters.getResultTransformer() );
+		return getResultList(result, queryParameters.getResultTransformer());
 	}
 
 	private QueryKey generateQueryKey(
 			SessionImplementor session,
 			QueryParameters queryParameters) {
 		return QueryKey.generateQueryKey(
-				getSQLString(),
-				queryParameters,
-				FilterKey.createFilterKeys( session.getLoadQueryInfluencers().getEnabledFilters() ),
-				session,
-				createCacheableResultTransformer( queryParameters )
-		);
+                getSQLString(),
+                queryParameters,
+                FilterKey.createFilterKeys(session.getLoadQueryInfluencers().getEnabledFilters()),
+                session,
+                createCacheableResultTransformer(queryParameters)
+        );
 	}
 
 	private CacheableResultTransformer createCacheableResultTransformer(QueryParameters queryParameters) {
 		return CacheableResultTransformer.create(
-				queryParameters.getResultTransformer(),
-				getResultRowAliases(),
-				includeInResultRow()
-		);
+                queryParameters.getResultTransformer(),
+                getResultRowAliases(),
+                includeInResultRow()
+        );
 	}
 
 	private List getResultFromQueryCache(
@@ -2553,7 +2710,7 @@ public abstract class Loader {
 
 		List result;
 		try {
-			result = doQueryAndInitializeNonLazyCollections( session, queryParameters, true, forcedResultTransformer );
+			result = doQueryAndInitializeNonLazyCollections(session, queryParameters, true, forcedResultTransformer);
 		}
 		catch ( SQLException sqle ) {
 			throw factory.getSQLExceptionHelper().convert(
@@ -2574,6 +2731,44 @@ public abstract class Loader {
 		}
 
 		return result;
+	}
+
+	private CompletableFuture<List> doListAsync(final AsyncSessionImplementor session,
+                                                final QueryParameters queryParameters,
+                                                final ResultTransformer forcedResultTransformer)
+            throws HibernateException {
+
+		final boolean stats = getFactory().getStatistics().isStatisticsEnabled();
+		long startTime = 0;
+		if ( stats ) startTime = System.nanoTime();
+        long startTimeFinal = startTime;
+
+        return doQueryAndInitializeNonLazyCollectionsAsync( session, queryParameters, true, forcedResultTransformer )
+                .handle((result, throwable) -> {
+                    if (result != null) {
+                        if ( stats ) {
+                            final long endTime = System.nanoTime();
+                            final long milliseconds = TimeUnit.MILLISECONDS.convert( endTime - startTimeFinal, TimeUnit.NANOSECONDS );
+                            getFactory().getStatisticsImplementor().queryExecuted(
+                                    getQueryIdentifier(),
+                                    result.size(),
+                                    milliseconds
+                            );
+                        }
+                        return result;
+                    } else {
+                        if (throwable instanceof SQLException) {
+                            SQLException sqle = (SQLException) throwable;
+                            throw factory.getSQLExceptionHelper().convert(
+                                    sqle,
+                                    "could not execute query",
+                                    getSQLString()
+                            );
+                        } else {
+                            throw new RuntimeException(throwable);
+                        }
+                    }
+                });
 	}
 
 	/**

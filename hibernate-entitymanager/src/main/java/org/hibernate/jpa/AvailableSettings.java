@@ -553,4 +553,10 @@ public interface AvailableSettings {
 	 * Used to pass along the name of the persistence unit.
 	 */
 	String PERSISTENCE_UNIT_NAME = "hibernate.ejb.persistenceUnitName";
+
+    /**
+     * Used to define the provider for asynchronous database access.
+     */
+    String ASYNC_DB_PROVIDER = "hibernate.async.provider";
+
 }

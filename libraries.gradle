@@ -55,7 +55,7 @@ ext {
             javassist:      'org.javassist:javassist:3.18.1-GA',
 
             // javax
-            jpa:            'org.hibernate.javax.persistence:hibernate-jpa-2.1-api:1.0.0.Final',
+            jpa:            'org.hibernate.javax.persistence:hibernate-jpa-2.1-api-async:1.0.1-SNAPSHOT',
             jta:            'org.jboss.spec.javax.transaction:jboss-transaction-api_1.2_spec:1.0.0.Final',
             validation:     'javax.validation:validation-api:1.1.0.Final',
             jacc:           'org.jboss.spec.javax.security.jacc:jboss-jacc-api_1.4_spec:1.0.2.Final',
@@ -118,7 +118,9 @@ ext {
             c3p0:            "com.mchange:c3p0:0.9.2.1",
             ehcache:         "net.sf.ehcache:ehcache-core:2.4.3",
             proxool:         "proxool:proxool:0.8.3",
-            hikaricp:        "com.zaxxer:HikariCP-java6:2.3.3"
+            hikaricp:        "com.zaxxer:HikariCP-java6:2.3.3",
+
+            postgresql_async: "com.jakobk:postgresql-async-java:1.0.0-SNAPSHOT"
 
         ]
 }

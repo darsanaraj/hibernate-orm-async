@@ -23,36 +23,6 @@
  */
 package org.hibernate.jpa.internal;
 
-import java.io.IOException;
-import java.io.InvalidObjectException;
-import java.io.ObjectOutputStream;
-import java.io.Serializable;
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
-import javax.persistence.Cache;
-import javax.persistence.EntityGraph;
-import javax.persistence.EntityManager;
-import javax.persistence.EntityManagerFactory;
-import javax.persistence.NamedAttributeNode;
-import javax.persistence.NamedEntityGraph;
-import javax.persistence.NamedSubgraph;
-import javax.persistence.PersistenceContextType;
-import javax.persistence.PersistenceException;
-import javax.persistence.PersistenceUnitUtil;
-import javax.persistence.Query;
-import javax.persistence.SynchronizationType;
-import javax.persistence.criteria.CriteriaBuilder;
-import javax.persistence.metamodel.Attribute;
-import javax.persistence.metamodel.EntityType;
-import javax.persistence.metamodel.Metamodel;
-import javax.persistence.spi.LoadState;
-import javax.persistence.spi.PersistenceUnitTransactionType;
-
 import org.hibernate.Hibernate;
 import org.hibernate.SessionFactory;
 import org.hibernate.boot.spi.MetadataImplementor;
@@ -76,13 +46,48 @@ import org.hibernate.jpa.graph.internal.AbstractGraphNode;
 import org.hibernate.jpa.graph.internal.AttributeNodeImpl;
 import org.hibernate.jpa.graph.internal.EntityGraphImpl;
 import org.hibernate.jpa.graph.internal.SubgraphImpl;
+import org.hibernate.jpa.internal.async.AsyncEntityManagerImpl;
 import org.hibernate.jpa.internal.metamodel.EntityTypeImpl;
 import org.hibernate.jpa.internal.metamodel.MetamodelImpl;
 import org.hibernate.jpa.internal.util.PersistenceUtilHelper;
+import org.hibernate.jpa.spi.async.DbConnectionPool;
+import org.hibernate.jpa.spi.async.DbConnectionPoolProvider;
 import org.hibernate.metadata.ClassMetadata;
 import org.hibernate.procedure.ProcedureCall;
-
 import org.jboss.logging.Logger;
+
+import javax.persistence.Cache;
+import javax.persistence.EntityGraph;
+import javax.persistence.EntityManager;
+import javax.persistence.EntityManagerFactory;
+import javax.persistence.NamedAttributeNode;
+import javax.persistence.NamedEntityGraph;
+import javax.persistence.NamedSubgraph;
+import javax.persistence.PersistenceContextType;
+import javax.persistence.PersistenceException;
+import javax.persistence.PersistenceUnitUtil;
+import javax.persistence.Query;
+import javax.persistence.SynchronizationType;
+import javax.persistence.async.AsyncEntityManager;
+import javax.persistence.criteria.CriteriaBuilder;
+import javax.persistence.metamodel.Attribute;
+import javax.persistence.metamodel.EntityType;
+import javax.persistence.metamodel.Metamodel;
+import javax.persistence.spi.LoadState;
+import javax.persistence.spi.PersistenceUnitTransactionType;
+import java.io.IOException;
+import java.io.InvalidObjectException;
+import java.io.ObjectOutputStream;
+import java.io.Serializable;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.ServiceLoader;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.stream.StreamSupport;
 
 /**
  * Actual Hibernate implementation of {@link javax.persistence.EntityManagerFactory}.
@@ -97,7 +102,7 @@ public class EntityManagerFactoryImpl implements HibernateEntityManagerFactory {
 
 	private static final Logger log = Logger.getLogger( EntityManagerFactoryImpl.class );
 
-	private final transient SessionFactoryImplementor sessionFactory;
+    private final transient SessionFactoryImplementor sessionFactory;
 	private final transient PersistenceUnitTransactionType transactionType;
 	private final transient boolean discardOnClose;
 	private final transient Class sessionInterceptorClass;
@@ -109,6 +114,8 @@ public class EntityManagerFactoryImpl implements HibernateEntityManagerFactory {
 
 	private final transient PersistenceUtilHelper.MetadataCache cache = new PersistenceUtilHelper.MetadataCache();
 	private final transient Map<String,EntityGraphImpl> entityGraphs = new ConcurrentHashMap<String, EntityGraphImpl>();
+
+    private DbConnectionPool dbConnectionPool;
 
 	public EntityManagerFactoryImpl(
 			String persistenceUnitName,
@@ -159,7 +166,7 @@ public class EntityManagerFactoryImpl implements HibernateEntityManagerFactory {
 		ENABLED,
 		DISABLED,
 		IGNORE_UNSUPPORTED;
-		
+
 		private static JpaMetaModelPopulationSetting parse(String setting) {
 			if ( "enabled".equalsIgnoreCase( setting ) ) {
 				return ENABLED;
@@ -172,7 +179,7 @@ public class EntityManagerFactoryImpl implements HibernateEntityManagerFactory {
 			}
 		}
 	}
-	
+
 	protected JpaMetaModelPopulationSetting determineJpaMetaModelPopulationSetting(Map configurationValues) {
 		String setting = ConfigurationHelper.getString(
 				AvailableSettings.JPA_METAMODEL_POPULATION,
@@ -182,7 +189,7 @@ public class EntityManagerFactoryImpl implements HibernateEntityManagerFactory {
 		if ( setting == null ) {
 			setting = ConfigurationHelper.getString( AvailableSettings.JPA_METAMODEL_GENERATION, configurationValues, null );
 			if ( setting != null ) {
-				log.infof( 
+				log.infof(
 						"Encountered deprecated setting [%s], use [%s] instead",
 						AvailableSettings.JPA_METAMODEL_GENERATION,
 						AvailableSettings.JPA_METAMODEL_POPULATION
@@ -289,12 +296,37 @@ public class EntityManagerFactoryImpl implements HibernateEntityManagerFactory {
 		}
 	}
 
-	@Override
-	public EntityManager createEntityManager() {
-		return internalCreateEntityManager( SynchronizationType.SYNCHRONIZED, Collections.EMPTY_MAP );
-	}
+    @Override
+    public AsyncEntityManager createAsyncEntityManager() {
+        // TODO dbConnectionPool must be per persistence-unit
+//        if (dbConnectionPool == null) {
+//            synchronized (this) {
+//                if (dbConnectionPool == null) {
+//                    dbConnectionPool = selectDbConnectionPoolProvider().createDbConnectionPool(properties);
+//                }
+//            }
+//        }
+        return new AsyncEntityManagerImpl(dbConnectionPool, sessionFactory);
+    }
 
-	@Override
+    private DbConnectionPoolProvider selectDbConnectionPoolProvider() {
+        String providerName = (String) properties.get(AvailableSettings.ASYNC_DB_PROVIDER);
+        if (providerName == null || providerName.isEmpty()) {
+            throw new IllegalStateException(AvailableSettings.ASYNC_DB_PROVIDER + " not set");
+        }
+        return StreamSupport.stream(ServiceLoader.load(DbConnectionPoolProvider.class).spliterator(), false)
+                .filter((provider) -> providerName.equals(provider.getName()))
+                .findAny()
+                .orElseThrow(() -> new IllegalStateException(
+                        "Could not find matching " + AvailableSettings.ASYNC_DB_PROVIDER + " for name " + providerName));
+    }
+
+    @Override
+    public EntityManager createEntityManager() {
+        return internalCreateEntityManager( SynchronizationType.SYNCHRONIZED, Collections.EMPTY_MAP );
+    }
+
+    @Override
 	public EntityManager createEntityManager(SynchronizationType synchronizationType) {
 		errorIfResourceLocalDueToExplicitSynchronizationType();
 		return internalCreateEntityManager( synchronizationType, Collections.EMPTY_MAP );

@@ -155,6 +155,21 @@ public abstract class PackagingTestCase extends BaseCoreFunctionalTestCase {
 		Thread.currentThread().setContextClassLoader( classLoader );
 	}
 
+    protected File buildAsyncJar() {
+        String fileName = "asyncjar.jar";
+        JavaArchive archive = ShrinkWrap.create(  JavaArchive.class, fileName );
+        archive.addClasses(
+                ApplicationServer.class,
+                Version.class
+        );
+        ArchivePath path = ArchivePaths.create( "META-INF/persistence.xml" );
+        archive.addAsResource( "asyncjar/META-INF/persistence.xml", path );
+
+        File testPackage = new File( packageTargetDir, fileName );
+        archive.as( ZipExporter.class ).exportTo ( testPackage, true );
+        return testPackage;
+    }
+
 	protected File buildDefaultPar() {
 		String fileName = "defaultpar.par";
 		JavaArchive archive = ShrinkWrap.create(  JavaArchive.class, fileName );

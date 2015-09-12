@@ -28,11 +28,13 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
 
 import org.hibernate.HibernateException;
 import org.hibernate.MappingException;
 import org.hibernate.QueryException;
 import org.hibernate.ScrollableResults;
+import org.hibernate.engine.spi.AsyncSessionImplementor;
 import org.hibernate.engine.spi.QueryParameters;
 import org.hibernate.engine.spi.SessionImplementor;
 import org.hibernate.event.spi.EventSource;
@@ -72,6 +74,11 @@ public interface QueryTranslator {
 	 */
 	List list(SessionImplementor session, QueryParameters queryParameters)
 			throws HibernateException;
+
+    default <T> CompletableFuture<List<T>> listAsync(AsyncSessionImplementor asyncSession, QueryParameters queryParameters)
+            throws HibernateException {
+        throw new UnsupportedOperationException("not implemented");
+    }
 
 	/**
 	 * Perform an iterate operation given the underlying query definition.

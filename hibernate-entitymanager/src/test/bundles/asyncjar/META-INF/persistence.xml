@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<persistence xmlns="http://xmlns.jcp.org/xml/ns/persistence" version="2.1">
+
+    <persistence-unit name="asyncjar" transaction-type="RESOURCE_LOCAL">
+        <class>org.hibernate.jpa.test.pack.asyncjar.AsyncPerson</class>
+        <validation-mode>NONE</validation-mode>
+        <properties>
+            <property name="hibernate.dialect" value="@db.dialect@"/>
+            <property name="hibernate.connection.driver_class" value="@jdbc.driver@"/>
+            <property name="hibernate.connection.username" value="@jdbc.user@"/>
+            <property name="hibernate.connection.password" value="@jdbc.pass@"/>
+            <property name="hibernate.connection.url" value="@jdbc.url@"/>
+            <property name="hibernate.hbm2ddl.auto" value="create-drop"/>
+            <property name="hibernate.cache.region.factory_class" value="org.hibernate.testing.cache.CachingRegionFactory"/>
+        </properties>
+    </persistence-unit>
+</persistence>

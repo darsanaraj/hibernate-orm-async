@@ -31,12 +31,14 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
 
 import org.hibernate.HibernateException;
 import org.hibernate.MappingException;
 import org.hibernate.QueryException;
 import org.hibernate.ScrollableResults;
 import org.hibernate.engine.query.spi.EntityGraphQueryHint;
+import org.hibernate.engine.spi.AsyncSessionImplementor;
 import org.hibernate.engine.spi.QueryParameters;
 import org.hibernate.engine.spi.RowSelection;
 import org.hibernate.engine.spi.SessionFactoryImplementor;
@@ -365,57 +367,80 @@ public class QueryTranslatorImpl implements FilterTranslator {
 	@Override
 	public List list(SessionImplementor session, QueryParameters queryParameters)
 			throws HibernateException {
-		// Delegate to the QueryLoader...
-		errorIfDML();
+        ListPreProcessingInfo info = preProcessList(queryParameters);
 
-		final QueryNode query = (QueryNode) sqlAst;
-		final boolean hasLimit = queryParameters.getRowSelection() != null && queryParameters.getRowSelection().definesLimits();
-		final boolean needsDistincting = ( query.getSelectClause().isDistinct() || hasLimit ) && containsCollectionFetches();
+        List results = queryLoader.list( session, info.queryParametersToUse );
 
-		QueryParameters queryParametersToUse;
-		if ( hasLimit && containsCollectionFetches() ) {
-			LOG.firstOrMaxResultsSpecifiedWithCollectionFetch();
-			RowSelection selection = new RowSelection();
-			selection.setFetchSize( queryParameters.getRowSelection().getFetchSize() );
-			selection.setTimeout( queryParameters.getRowSelection().getTimeout() );
-			queryParametersToUse = queryParameters.createCopyUsing( selection );
-		}
-		else {
-			queryParametersToUse = queryParameters;
-		}
-
-		List results = queryLoader.list( session, queryParametersToUse );
-
-		if ( needsDistincting ) {
-			int includedCount = -1;
-			// NOTE : firstRow is zero-based
-			int first = !hasLimit || queryParameters.getRowSelection().getFirstRow() == null
-						? 0
-						: queryParameters.getRowSelection().getFirstRow();
-			int max = !hasLimit || queryParameters.getRowSelection().getMaxRows() == null
-						? -1
-						: queryParameters.getRowSelection().getMaxRows();
-			List tmp = new ArrayList();
-			IdentitySet distinction = new IdentitySet();
-			for ( final Object result : results ) {
-				if ( !distinction.add( result ) ) {
-					continue;
-				}
-				includedCount++;
-				if ( includedCount < first ) {
-					continue;
-				}
-				tmp.add( result );
-				// NOTE : ( max - 1 ) because first is zero-based while max is not...
-				if ( max >= 0 && ( includedCount - first ) >= ( max - 1 ) ) {
-					break;
-				}
-			}
-			results = tmp;
-		}
-
-		return results;
+        return processListResults(queryParameters, info.hasLimit, info.needsDistincting, results);
 	}
+
+    @Override
+    public <T> CompletableFuture<List<T>> listAsync(AsyncSessionImplementor asyncSession, QueryParameters queryParameters) {
+        ListPreProcessingInfo info = preProcessList(queryParameters);
+
+        return queryLoader.listAsync( asyncSession, info.queryParametersToUse )
+                .thenApply(results -> processListResults(queryParameters, info.hasLimit, info.needsDistincting, results));
+    }
+
+    private static class ListPreProcessingInfo {
+        private boolean hasLimit;
+        private boolean needsDistincting;
+        private QueryParameters queryParametersToUse;
+    }
+
+    private ListPreProcessingInfo preProcessList(QueryParameters queryParameters) {
+        // Delegate to the QueryLoader...
+        errorIfDML();
+
+        ListPreProcessingInfo info = new ListPreProcessingInfo();
+        final QueryNode query = (QueryNode) sqlAst;
+        info.hasLimit = queryParameters.getRowSelection() != null && queryParameters.getRowSelection().definesLimits();
+        info.needsDistincting = (query.getSelectClause().isDistinct() || info.hasLimit) && containsCollectionFetches();
+
+        if ( info.hasLimit && containsCollectionFetches() ) {
+            LOG.firstOrMaxResultsSpecifiedWithCollectionFetch();
+            RowSelection selection = new RowSelection();
+            selection.setFetchSize( queryParameters.getRowSelection().getFetchSize() );
+            selection.setTimeout( queryParameters.getRowSelection().getTimeout() );
+            info.queryParametersToUse = queryParameters.createCopyUsing( selection );
+        }
+        else {
+            info.queryParametersToUse = queryParameters;
+        }
+        return info;
+    }
+
+    private List processListResults(QueryParameters queryParameters, boolean hasLimit, boolean needsDistincting, List results) {
+        if ( needsDistincting ) {
+            int includedCount = -1;
+            // NOTE : firstRow is zero-based
+            int first = !hasLimit || queryParameters.getRowSelection().getFirstRow() == null
+                    ? 0
+                    : queryParameters.getRowSelection().getFirstRow();
+            int max = !hasLimit || queryParameters.getRowSelection().getMaxRows() == null
+                    ? -1
+                    : queryParameters.getRowSelection().getMaxRows();
+            List tmp = new ArrayList();
+            IdentitySet distinction = new IdentitySet();
+            for ( final Object result : results ) {
+                if ( !distinction.add( result ) ) {
+                    continue;
+                }
+                includedCount++;
+                if ( includedCount < first ) {
+                    continue;
+                }
+                tmp.add( result );
+                // NOTE : ( max - 1 ) because first is zero-based while max is not...
+                if ( max >= 0 && ( includedCount - first ) >= ( max - 1 ) ) {
+                    break;
+                }
+            }
+            results = tmp;
+        }
+
+        return results;
+    }
 
 	/**
 	 * Return the query results as an iterator
@@ -637,4 +662,5 @@ public class QueryTranslatorImpl implements FilterTranslator {
 	public void setEntityGraphQueryHint(EntityGraphQueryHint entityGraphQueryHint) {
 		this.entityGraphQueryHint = entityGraphQueryHint;
 	}
+
 }
