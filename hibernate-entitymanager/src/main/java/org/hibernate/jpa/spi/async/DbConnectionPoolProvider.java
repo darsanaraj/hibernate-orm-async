@@ -1,5 +1,7 @@
 package org.hibernate.jpa.spi.async;
 
+import com.jakobk.async.db.DbConnection;
+
 import java.util.Map;
 
 /**
@@ -9,7 +11,7 @@ import java.util.Map;
  */
 public interface DbConnectionPoolProvider {
 
-    public DbConnectionPool createDbConnectionPool(Map<String, Object> properties);
+    public DbConnection createDbConnectionPool(Map<String, Object> properties);  // TODO integrate DbConnection interface into Hibernate SPI
 
     public String getName();
 

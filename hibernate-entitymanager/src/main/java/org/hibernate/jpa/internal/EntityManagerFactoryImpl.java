@@ -23,6 +23,7 @@
  */
 package org.hibernate.jpa.internal;
 
+import com.jakobk.async.db.DbConnectionPool;
 import org.hibernate.Hibernate;
 import org.hibernate.SessionFactory;
 import org.hibernate.boot.spi.MetadataImplementor;
@@ -50,7 +51,6 @@ import org.hibernate.jpa.internal.async.AsyncEntityManagerImpl;
 import org.hibernate.jpa.internal.metamodel.EntityTypeImpl;
 import org.hibernate.jpa.internal.metamodel.MetamodelImpl;
 import org.hibernate.jpa.internal.util.PersistenceUtilHelper;
-import org.hibernate.jpa.spi.async.DbConnectionPool;
 import org.hibernate.jpa.spi.async.DbConnectionPoolProvider;
 import org.hibernate.metadata.ClassMetadata;
 import org.hibernate.procedure.ProcedureCall;

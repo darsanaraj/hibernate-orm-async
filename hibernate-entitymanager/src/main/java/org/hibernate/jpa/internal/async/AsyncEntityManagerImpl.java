@@ -1,17 +1,17 @@
 package org.hibernate.jpa.internal.async;
 
+import com.jakobk.async.db.DbConnectionPool;
 import org.hibernate.HibernateException;
 import org.hibernate.engine.query.spi.HQLQueryPlan;
+import org.hibernate.engine.spi.AsyncSessionImplementor;
 import org.hibernate.engine.spi.QueryParameters;
 import org.hibernate.engine.spi.SessionFactoryImplementor;
 import org.hibernate.hql.spi.QueryTranslator;
-import org.hibernate.jpa.spi.async.DbConnectionPool;
 
 import javax.persistence.async.AsyncEntityManager;
 import javax.persistence.async.AsyncEntityTransaction;
 import javax.persistence.async.AsyncQuery;
 import java.util.Collections;
-import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 
 /**
@@ -19,7 +19,7 @@ import java.util.concurrent.CompletableFuture;
  *
  * @author Jakob Korherr
  */
-public class AsyncEntityManagerImpl implements AsyncEntityManager {
+public class AsyncEntityManagerImpl implements AsyncEntityManager, AsyncSessionHolder {
 
     private final DbConnectionPool dbConnectionPool;
     private final SessionFactoryImplementor sessionFactory;
@@ -45,33 +45,25 @@ public class AsyncEntityManagerImpl implements AsyncEntityManager {
     }
 
     @Override
-    public <T> CompletableFuture<AsyncQuery<T>> createQuery(String qlString, Class<T> resultClass) {
-        HQLQueryPlan queryPlan = getHQLQueryPlan(qlString, false);
-        String[] sqlStrings = queryPlan.getSqlStrings();
-        for (String sqlString : sqlStrings) {
-            System.out.println(sqlString);
-        }
-
-        QueryTranslator[] translators = queryPlan.getTranslators();
-        QueryTranslator translator = translators[0];
-        return translator.listAsync(new AsyncSessionImpl(sessionFactory), new QueryParameters())
-                .thenApply(list -> {
-                    list.forEach(objectRow -> {
-//                        Object[] row = (Object[]) objectRow;
-//                        System.out.println(row[0] + " " + row[1]);
-                        System.out.println(objectRow);
-                    });
-                    return null;
-                });
-
-    }
-
-    protected HQLQueryPlan getHQLQueryPlan(String query, boolean shallow) throws HibernateException {
-        return sessionFactory.getQueryPlanCache().getHQLQueryPlan(query, shallow, Collections.emptyMap());
+    public <T> AsyncQuery<T> createQuery(String qlString, Class<T> resultClass) {
+        return new AsyncQueryImpl<>(qlString, resultClass, this, this);
     }
 
     @Override
     public void close() {
 
+    }
+
+    protected DbConnectionPool getDbConnectionPool() {
+        return dbConnectionPool;
+    }
+
+    protected SessionFactoryImplementor getSessionFactory() {
+        return sessionFactory;
+    }
+
+    @Override
+    public AsyncSessionImplementor getAsyncSession() {
+        return new AsyncSessionImpl(sessionFactory);
     }
 }

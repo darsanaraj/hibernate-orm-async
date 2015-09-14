@@ -54,6 +54,13 @@ public class RecordingPreparedStatement implements PreparedStatement {
         return parameterTypes;
     }
 
+    private void ensureCapacity(int index) {
+        while (index >= parameters.size()) {
+            parameters.add(null);
+            parameterTypes.add(null);
+        }
+    }
+
     @Override
     public void clearParameters() throws SQLException {
         parameters.clear();
@@ -84,84 +91,98 @@ public class RecordingPreparedStatement implements PreparedStatement {
 
     @Override
     public void setNull(int parameterIndex, int sqlType) throws SQLException {
+        ensureCapacity(parameterIndex - 1);
         parameters.set(parameterIndex - 1, null);
         parameterTypes.set(parameterIndex - 1, sqlType);
     }
 
     @Override
     public void setBoolean(int parameterIndex, boolean x) throws SQLException {
+        ensureCapacity(parameterIndex - 1);
         parameters.set(parameterIndex - 1, x);
         parameterTypes.set(parameterIndex - 1, Types.BOOLEAN);
     }
 
     @Override
     public void setByte(int parameterIndex, byte x) throws SQLException {
+        ensureCapacity(parameterIndex - 1);
         parameters.set(parameterIndex - 1, x);
         parameterTypes.set(parameterIndex - 1, Types.TINYINT);
     }
 
     @Override
     public void setShort(int parameterIndex, short x) throws SQLException {
+        ensureCapacity(parameterIndex - 1);
         parameters.set(parameterIndex - 1, x);
         parameterTypes.set(parameterIndex - 1, Types.SMALLINT);
     }
 
     @Override
     public void setInt(int parameterIndex, int x) throws SQLException {
+        ensureCapacity(parameterIndex - 1);
         parameters.set(parameterIndex - 1, x);
         parameterTypes.set(parameterIndex - 1, Types.INTEGER);
     }
 
     @Override
     public void setLong(int parameterIndex, long x) throws SQLException {
+        ensureCapacity(parameterIndex - 1);
         parameters.set(parameterIndex - 1, x);
         parameterTypes.set(parameterIndex - 1, Types.BIGINT);
     }
 
     @Override
     public void setFloat(int parameterIndex, float x) throws SQLException {
+        ensureCapacity(parameterIndex - 1);
         parameters.set(parameterIndex - 1, x);
         parameterTypes.set(parameterIndex - 1, Types.FLOAT);
     }
 
     @Override
     public void setDouble(int parameterIndex, double x) throws SQLException {
+        ensureCapacity(parameterIndex - 1);
         parameters.set(parameterIndex - 1, x);
         parameterTypes.set(parameterIndex - 1, Types.DOUBLE);
     }
 
     @Override
     public void setBigDecimal(int parameterIndex, BigDecimal x) throws SQLException {
+        ensureCapacity(parameterIndex - 1);
         parameters.set(parameterIndex - 1, x);
         parameterTypes.set(parameterIndex - 1, Types.NUMERIC);
     }
 
     @Override
     public void setString(int parameterIndex, String x) throws SQLException {
+        ensureCapacity(parameterIndex - 1);
         parameters.set(parameterIndex - 1, x);
         parameterTypes.set(parameterIndex - 1, Types.VARCHAR);
     }
 
     @Override
     public void setBytes(int parameterIndex, byte[] x) throws SQLException {
+        ensureCapacity(parameterIndex - 1);
         parameters.set(parameterIndex - 1, x);
         parameterTypes.set(parameterIndex - 1, Types.BINARY);
     }
 
     @Override
     public void setDate(int parameterIndex, Date x) throws SQLException {
+        ensureCapacity(parameterIndex - 1);
         parameters.set(parameterIndex - 1, x);
         parameterTypes.set(parameterIndex - 1, Types.DATE);
     }
 
     @Override
     public void setTime(int parameterIndex, Time x) throws SQLException {
+        ensureCapacity(parameterIndex - 1);
         parameters.set(parameterIndex - 1, x);
         parameterTypes.set(parameterIndex - 1, Types.TIME);
     }
 
     @Override
     public void setTimestamp(int parameterIndex, Timestamp x) throws SQLException {
+        ensureCapacity(parameterIndex - 1);
         parameters.set(parameterIndex - 1, x);
         parameterTypes.set(parameterIndex - 1, Types.TIMESTAMP);
     }

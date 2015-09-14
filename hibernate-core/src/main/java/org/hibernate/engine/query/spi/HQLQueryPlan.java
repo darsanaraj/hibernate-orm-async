@@ -25,17 +25,23 @@ package org.hibernate.engine.query.spi;
 
 import java.io.Serializable;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionStage;
+import java.util.function.Function;
 
 import org.hibernate.Filter;
 import org.hibernate.HibernateException;
 import org.hibernate.QueryException;
 import org.hibernate.ScrollableResults;
+import org.hibernate.engine.spi.AsyncSessionImplementor;
 import org.hibernate.engine.spi.QueryParameters;
 import org.hibernate.engine.spi.RowSelection;
 import org.hibernate.engine.spi.SessionFactoryImplementor;
@@ -263,6 +269,106 @@ public class HQLQueryPlan implements Serializable {
 		}
 		return combinedResults;
 	}
+
+    public CompletableFuture<List> performListAsync(
+            QueryParameters queryParameters,
+            AsyncSessionImplementor session) throws HibernateException {
+        if ( TRACE_ENABLED ) {
+            LOG.tracev( "Find: {0}", getSourceQuery() );
+            queryParameters.traceParameters( session.getFactory() );
+        }
+
+        final RowSelection rowSelection = queryParameters.getRowSelection();
+        final boolean hasLimit = rowSelection != null
+                && rowSelection.definesLimits();
+        final boolean needsLimit = hasLimit && translators.length > 1;
+
+        final QueryParameters queryParametersToUse;
+        if ( needsLimit ) {
+            LOG.needsLimit();
+            final RowSelection selection = new RowSelection();
+            selection.setFetchSize( queryParameters.getRowSelection().getFetchSize() );
+            selection.setTimeout( queryParameters.getRowSelection().getTimeout() );
+            queryParametersToUse = queryParameters.createCopyUsing( selection );
+        }
+        else {
+            queryParametersToUse = queryParameters;
+        }
+
+        final int guessedResultSize = guessResultSize( rowSelection );
+        return new MultipleQueryTranslatorAsyncExecutor(guessedResultSize, needsLimit, translators, queryParametersToUse, session).listAsync();
+    }
+
+    private static class MultipleQueryTranslatorAsyncExecutor implements Function<List<Object>, CompletionStage<List>> {
+        private final List combinedResults;
+        private final IdentitySet distinction;
+        private final boolean needsLimit;
+        private final QueryParameters queryParameters;
+        private final AsyncSessionImplementor session;
+        private int includedCount = -1;
+        private Iterator<QueryTranslator> queryTranslatorIterator;
+
+        MultipleQueryTranslatorAsyncExecutor(int guessedResultSize, boolean needsLimit, QueryTranslator[] translators,
+                                             QueryParameters queryParameters, AsyncSessionImplementor session) {
+            this.needsLimit = needsLimit;
+            this.queryParameters = queryParameters;
+            this.session = session;
+            combinedResults = new ArrayList(guessedResultSize);
+            distinction = new IdentitySet(guessedResultSize);
+            queryTranslatorIterator = Arrays.asList(translators).iterator();
+        }
+
+        public CompletableFuture<List> listAsync() {
+            return continueIfPossible();
+        }
+
+        private CompletableFuture<List> continueIfPossible() {
+            if (queryTranslatorIterator.hasNext()) {
+                return continueWithNextTranslator();
+            } else {
+                return done();
+            }
+        }
+
+        private CompletableFuture<List> continueWithNextTranslator() {
+            return queryTranslatorIterator.next().listAsync(session, queryParameters).thenCompose(this);
+        }
+
+        private CompletableFuture<List> done() {
+            return CompletableFuture.completedFuture(combinedResults);
+        }
+
+        @Override
+        public CompletionStage<List> apply(List<Object> tmp) {
+            if (needsLimit) {
+                // NOTE : firstRow is zero-based
+                final int first = queryParameters.getRowSelection().getFirstRow() == null
+                        ? 0
+                        : queryParameters.getRowSelection().getFirstRow();
+                final int max = queryParameters.getRowSelection().getMaxRows() == null
+                        ? -1
+                        : queryParameters.getRowSelection().getMaxRows();
+                for (final Object result : tmp) {
+                    if (!distinction.add(result)) {
+                        continue;
+                    }
+                    includedCount++;
+                    if (includedCount < first) {
+                        continue;
+                    }
+                    combinedResults.add(result);
+                    if (max >= 0 && includedCount > max) {
+                        return done();
+                    }
+                }
+            } else {
+                combinedResults.addAll(tmp);
+            }
+
+            return continueIfPossible();
+        }
+
+    }
 
 	/**
 	 * If we're able to guess a likely size of the results we can optimize allocation

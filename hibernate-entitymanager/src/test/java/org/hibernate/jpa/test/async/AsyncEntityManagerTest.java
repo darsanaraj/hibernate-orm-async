@@ -11,6 +11,7 @@ import javax.persistence.EntityManagerFactory;
 import javax.persistence.Persistence;
 import javax.persistence.async.AsyncEntityManager;
 import java.io.File;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.concurrent.ExecutionException;
@@ -33,8 +34,8 @@ public class AsyncEntityManagerTest extends PackagingTestCase {
         em.getTransaction().commit();
         @SuppressWarnings("unchecked")
         List<Object[]> resultList = em.createQuery(
-                "select a.id, a.name from AsyncPerson a where a.name = :name")
-                .setParameter("name", "jakob")
+                "select a.id, a.name from AsyncPerson a where a.name in (:name)")
+                .setParameter("name", Arrays.asList("jakob", "jakob1"))
                 .getResultList();
         for (Object[] row : resultList) {
             System.out.println(row[0] + " " + row[1]);
@@ -43,7 +44,19 @@ public class AsyncEntityManagerTest extends PackagingTestCase {
 
         AsyncEntityManager aem = emf.createAsyncEntityManager();
 //        aem.createQuery("select new " + QueryRow.class.getName() + "(a.id, a.name) from AsyncPerson a", Object[].class).get();
-        aem.createQuery("select a from AsyncPerson a", AsyncPerson.class).get();
+        List<AsyncPerson> asyncPersons = aem.createQuery("select a from AsyncPerson a where a.name in (:name)", AsyncPerson.class)
+                .setParameter("name", Arrays.asList("jakob", "jakob1"))
+                .setFirstResult(0)
+                .setMaxResults(10)
+                .getResultList().get();
+        for (AsyncPerson asyncPerson : asyncPersons) {
+            System.out.println(asyncPerson);
+        }
+
+        QueryRow row = aem.createQuery("select new " + QueryRow.class.getName() + "(a.id, a.name) from AsyncPerson a where a.name in (:name)", QueryRow.class)
+                .setParameter("name", Arrays.asList("jakob", "jakob1"))
+                .getSingleResult().get();
+        System.out.println(row);
 
         aem.close();
 
