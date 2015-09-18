@@ -50,9 +50,7 @@ public interface StatementExecutor {
 	 */
 	public int execute(QueryParameters parameters, SessionImplementor session) throws HibernateException;
 
-    public default CompletableFuture<Integer> executeAsync(QueryParameters queryParameters,
-                                                           AsyncSessionImplementor asyncSessionImplementor) throws HibernateException {
-        throw new UnsupportedOperationException("not implemented");
-    }
+    public  CompletableFuture<Integer> executeAsync(QueryParameters queryParameters,
+                                                    AsyncSessionImplementor asyncSessionImplementor) throws HibernateException;
 
 }

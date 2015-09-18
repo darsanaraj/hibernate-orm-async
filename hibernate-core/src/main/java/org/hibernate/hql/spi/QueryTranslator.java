@@ -77,7 +77,8 @@ public interface QueryTranslator {
 
     default <T> CompletableFuture<List<T>> listAsync(AsyncSessionImplementor asyncSession, QueryParameters queryParameters)
             throws HibernateException {
-        throw new UnsupportedOperationException("not implemented");
+        // to ensure compile compatibility with existing code
+        throw new UnsupportedOperationException("async not implemented");
     }
 
 	/**
@@ -115,7 +116,8 @@ public interface QueryTranslator {
 
     default CompletableFuture<Integer> executeUpdateAsync(QueryParameters queryParameters, AsyncSessionImplementor asyncSession)
             throws HibernateException {
-        throw new UnsupportedOperationException("not implemented");
+        // to ensure compile compatibility with existing code
+        throw new UnsupportedOperationException("async not implemented");
     }
 
 	/**

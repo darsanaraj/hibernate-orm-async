@@ -70,6 +70,7 @@ public class MultiTableUpdateExecutor implements StatementExecutor {
 
     @Override
     public CompletableFuture<Integer> executeAsync(QueryParameters queryParameters, AsyncSessionImplementor asyncSessionImplementor) throws HibernateException {
-        throw new IllegalStateException("not implemented");  // TODO jakobk
+        throw new UnsupportedOperationException("Multi table updates are not supported in async mode");
+        // ... because multi table actions require temp tables created with DDL commands
     }
 }

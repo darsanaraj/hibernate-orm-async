@@ -28,20 +28,7 @@ public class AsyncEntityManagerTest extends PackagingTestCase {
 
         // run the test
         EntityManagerFactory emf = Persistence.createEntityManagerFactory( "asyncjar", new HashMap() );
-        EntityManager em = emf.createEntityManager();
-        em.getTransaction().begin();
-        em.persist(new AsyncPerson("jakob"));
-        em.flush();
-        em.getTransaction().commit();
-        @SuppressWarnings("unchecked")
-        List<Object[]> resultList = em.createQuery(
-                "select a.id, a.name from AsyncPerson a where a.name in (:name)")
-                .setParameter("name", Arrays.asList("jakob", "jakob1"))
-                .getResultList();
-        for (Object[] row : resultList) {
-            System.out.println(row[0] + " " + row[1]);
-        }
-        em.close();
+        insertDataSynchronously(emf);
 
         AsyncEntityManager aem = emf.createAsyncEntityManager();
         List<AsyncPerson> asyncPersons = aem.createQuery("select a from AsyncPerson a where a.name in (:name)", AsyncPerson.class)
@@ -77,6 +64,22 @@ public class AsyncEntityManagerTest extends PackagingTestCase {
         aem.close();
 
         emf.close();
+    }
+
+    private void insertDataSynchronously(EntityManagerFactory emf) {
+        EntityManager em = null;
+        try {
+            em = emf.createEntityManager();
+            em.getTransaction().begin();
+            em.persist(new AsyncPerson("jakob"));
+            em.flush();
+            em.getTransaction().commit();
+            em.close();
+        } finally {
+            if (em != null) {
+                em.close();
+            }
+        }
     }
 
     public static class QueryRow {
