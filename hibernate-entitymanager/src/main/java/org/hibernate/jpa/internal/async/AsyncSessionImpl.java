@@ -89,6 +89,27 @@ public class AsyncSessionImpl implements AsyncSessionImplementor {
     }
 
     @Override
+    public CompletableFuture<Integer> executeUpdateAsync(PreparedStatement recordingPreparedStatement) {
+        if (recordingPreparedStatement instanceof RecordingPreparedStatement) {
+            RecordingPreparedStatement st = (RecordingPreparedStatement) recordingPreparedStatement;
+
+            Configuration configuration = new ConfigurationBuilder()
+                    .withUsername("postgres")
+                    .withPassword("postgres")
+                    .withDatabase("niotest")
+                    .build();
+
+            PostgresqlConnection postgresqlConnection = new PostgresqlConnectionBuilder().withConfiguration(configuration).build();
+
+            return postgresqlConnection.connect()
+                    .thenCompose(c -> c.sendPreparedStatement(st.getSql(), st.getParameters()))
+                    .thenCompose(result -> postgresqlConnection.disconnect().thenApply(connection -> (int) result.getAffectedRowCount()));
+        } else {
+            throw new IllegalArgumentException("PreparedStatement must be a RecordingPreparedStatement");
+        }
+    }
+
+    @Override
     public String getTenantIdentifier() {
         throw new IllegalStateException("not implemented");
     }

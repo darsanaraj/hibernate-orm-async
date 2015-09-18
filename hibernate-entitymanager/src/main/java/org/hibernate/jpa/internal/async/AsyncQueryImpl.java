@@ -90,7 +90,10 @@ public class AsyncQueryImpl<ResultType> implements AsyncQuery<ResultType> {
 
     @Override
     public CompletableFuture<Integer> executeUpdate() {
-        throw new IllegalStateException("not implemented");      // TODO jakobk
+        Map<String, TypedValue> namedParamsCopy = queryDelegate.getNamedParams();
+        String expandedQuery = queryDelegate.expandParameterLists(namedParamsCopy);  // side-effect: also adds named params to map!
+        HQLQueryPlan hqlQueryPlan = getHQLQueryPlan(expandedQuery, false);
+        return hqlQueryPlan.performExecuteUpdateAsync(queryDelegate.getQueryParameters(namedParamsCopy), asyncSessionHolder.getAsyncSession());
     }
 
     @Override

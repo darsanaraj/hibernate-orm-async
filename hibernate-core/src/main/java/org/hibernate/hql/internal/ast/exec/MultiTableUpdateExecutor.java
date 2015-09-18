@@ -26,11 +26,14 @@ package org.hibernate.hql.internal.ast.exec;
 
 import org.hibernate.HibernateException;
 import org.hibernate.action.internal.BulkOperationCleanupAction;
+import org.hibernate.engine.spi.AsyncSessionImplementor;
 import org.hibernate.engine.spi.QueryParameters;
 import org.hibernate.engine.spi.SessionImplementor;
 import org.hibernate.event.spi.EventSource;
 import org.hibernate.hql.internal.ast.HqlSqlWalker;
 import org.hibernate.hql.spi.id.MultiTableBulkIdStrategy;
+
+import java.util.concurrent.CompletableFuture;
 
 /**
  * Implementation of MultiTableUpdateExecutor.
@@ -64,4 +67,9 @@ public class MultiTableUpdateExecutor implements StatementExecutor {
 
 		return updateHandler.execute( session, parameters );
 	}
+
+    @Override
+    public CompletableFuture<Integer> executeAsync(QueryParameters queryParameters, AsyncSessionImplementor asyncSessionImplementor) throws HibernateException {
+        throw new IllegalStateException("not implemented");  // TODO jakobk
+    }
 }

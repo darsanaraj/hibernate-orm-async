@@ -21,10 +21,13 @@
 package org.hibernate.hql.internal.ast.exec;
 
 import java.util.ArrayList;
+import java.util.Iterator;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
 
 import org.hibernate.HibernateException;
 import org.hibernate.dialect.Dialect;
+import org.hibernate.engine.spi.AsyncSessionImplementor;
 import org.hibernate.engine.spi.QueryParameters;
 import org.hibernate.engine.spi.SessionFactoryImplementor;
 import org.hibernate.engine.spi.SessionImplementor;
@@ -124,4 +127,16 @@ public class DeleteExecutor extends BasicExecutor {
 		// finally, execute the original sql statement
 		return super.execute( parameters, session );
 	}
+
+    @Override
+    public CompletableFuture<Integer> executeAsync(QueryParameters parameters, AsyncSessionImplementor session) throws HibernateException {
+        CompletableFuture<Integer> future = CompletableFuture.completedFuture(0);
+        for (String delete : deletes) {
+            future = future.thenCompose(updateCnt -> doExecuteAsync(parameters, session, delete, parameterSpecifications));
+        }
+
+        // finally, execute the original sql statement
+        return future.thenCompose(updateCnt -> super.executeAsync(parameters, session));
+    }
+
 }

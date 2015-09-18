@@ -470,7 +470,13 @@ public class QueryTranslatorImpl implements FilterTranslator {
 		return statementExecutor.execute( queryParameters, session );
 	}
 
-	/**
+    @Override
+    public CompletableFuture<Integer> executeUpdateAsync(QueryParameters queryParameters, AsyncSessionImplementor asyncSession) throws HibernateException {
+        errorIfSelect();
+        return statementExecutor.executeAsync( queryParameters, asyncSession );
+    }
+
+    /**
 	 * The SQL query string to be called; implemented by all subclasses
 	 */
 	@Override

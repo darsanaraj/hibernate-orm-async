@@ -24,8 +24,11 @@
  */
 package org.hibernate.hql.internal.ast.exec;
 import org.hibernate.HibernateException;
+import org.hibernate.engine.spi.AsyncSessionImplementor;
 import org.hibernate.engine.spi.QueryParameters;
 import org.hibernate.engine.spi.SessionImplementor;
+
+import java.util.concurrent.CompletableFuture;
 
 /**
  * Encapsulates the strategy required to execute various types of update, delete,
@@ -46,5 +49,10 @@ public interface StatementExecutor {
 	 * @throws HibernateException
 	 */
 	public int execute(QueryParameters parameters, SessionImplementor session) throws HibernateException;
+
+    public default CompletableFuture<Integer> executeAsync(QueryParameters queryParameters,
+                                                           AsyncSessionImplementor asyncSessionImplementor) throws HibernateException {
+        throw new UnsupportedOperationException("not implemented");
+    }
 
 }

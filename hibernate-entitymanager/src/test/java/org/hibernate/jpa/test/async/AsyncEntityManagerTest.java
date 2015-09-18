@@ -31,6 +31,7 @@ public class AsyncEntityManagerTest extends PackagingTestCase {
         EntityManager em = emf.createEntityManager();
         em.getTransaction().begin();
         em.persist(new AsyncPerson("jakob"));
+        em.flush();
         em.getTransaction().commit();
         @SuppressWarnings("unchecked")
         List<Object[]> resultList = em.createQuery(
@@ -43,7 +44,6 @@ public class AsyncEntityManagerTest extends PackagingTestCase {
         em.close();
 
         AsyncEntityManager aem = emf.createAsyncEntityManager();
-//        aem.createQuery("select new " + QueryRow.class.getName() + "(a.id, a.name) from AsyncPerson a", Object[].class).get();
         List<AsyncPerson> asyncPersons = aem.createQuery("select a from AsyncPerson a where a.name in (:name)", AsyncPerson.class)
                 .setParameter("name", Arrays.asList("jakob", "jakob1"))
                 .setFirstResult(0)
@@ -57,6 +57,22 @@ public class AsyncEntityManagerTest extends PackagingTestCase {
                 .setParameter("name", Arrays.asList("jakob", "jakob1"))
                 .getSingleResult().get();
         System.out.println(row);
+
+        Integer updateCnt = aem.createQuery("update AsyncPerson a set a.name = :newName where a.name = :oldName", Void.class)
+                .setParameter("newName", "steffi")
+                .setParameter("oldName", "jakob")
+                .executeUpdate().get();
+        System.out.println("UPDATED " + updateCnt);
+
+        QueryRow rowNew = aem.createQuery("select new " + QueryRow.class.getName() + "(a.id, a.name) from AsyncPerson a where a.name = :name", QueryRow.class)
+                .setParameter("name", "steffi")
+                .getSingleResult().get();
+        System.out.println(rowNew);
+
+        Integer deleteCnt = aem.createQuery("delete from AsyncPerson a where a.name = :name", Void.class)
+                .setParameter("name", "steffi")
+                .executeUpdate().get();
+        System.out.println("DELETED " + deleteCnt);
 
         aem.close();
 

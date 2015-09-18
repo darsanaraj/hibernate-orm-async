@@ -26,7 +26,6 @@ package org.hibernate.engine.query.spi;
 import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
@@ -34,7 +33,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.CompletionStage;
 import java.util.function.Function;
 
 import org.hibernate.Filter;
@@ -270,7 +268,7 @@ public class HQLQueryPlan implements Serializable {
 		return combinedResults;
 	}
 
-    public CompletableFuture<List> performListAsync(
+    public CompletableFuture<List<Object>> performListAsync(
             QueryParameters queryParameters,
             AsyncSessionImplementor session) throws HibernateException {
         if ( TRACE_ENABLED ) {
@@ -296,50 +294,27 @@ public class HQLQueryPlan implements Serializable {
         }
 
         final int guessedResultSize = guessResultSize( rowSelection );
-        return new MultipleQueryTranslatorAsyncExecutor(guessedResultSize, needsLimit, translators, queryParametersToUse, session).listAsync();
+        return executeAsync(new AsyncGetResultListStrategy(queryParametersToUse, session, guessedResultSize, needsLimit));
     }
 
-    private static class MultipleQueryTranslatorAsyncExecutor implements Function<List<Object>, CompletionStage<List>> {
-        private final List combinedResults;
+    private static class AsyncGetResultListStrategy implements AsyncMultiQueryTranslatorExecutorStrategy<List<Object>> {
+        private final List<Object> combinedResults;
         private final IdentitySet distinction;
         private final boolean needsLimit;
         private final QueryParameters queryParameters;
         private final AsyncSessionImplementor session;
         private int includedCount = -1;
-        private Iterator<QueryTranslator> queryTranslatorIterator;
 
-        MultipleQueryTranslatorAsyncExecutor(int guessedResultSize, boolean needsLimit, QueryTranslator[] translators,
-                                             QueryParameters queryParameters, AsyncSessionImplementor session) {
-            this.needsLimit = needsLimit;
+        AsyncGetResultListStrategy(QueryParameters queryParameters, AsyncSessionImplementor session, int guessedResultSize, boolean needsLimit) {
             this.queryParameters = queryParameters;
             this.session = session;
-            combinedResults = new ArrayList(guessedResultSize);
+            this.needsLimit = needsLimit;
+            combinedResults = new ArrayList<>(guessedResultSize);
             distinction = new IdentitySet(guessedResultSize);
-            queryTranslatorIterator = Arrays.asList(translators).iterator();
-        }
-
-        public CompletableFuture<List> listAsync() {
-            return continueIfPossible();
-        }
-
-        private CompletableFuture<List> continueIfPossible() {
-            if (queryTranslatorIterator.hasNext()) {
-                return continueWithNextTranslator();
-            } else {
-                return done();
-            }
-        }
-
-        private CompletableFuture<List> continueWithNextTranslator() {
-            return queryTranslatorIterator.next().listAsync(session, queryParameters).thenCompose(this);
-        }
-
-        private CompletableFuture<List> done() {
-            return CompletableFuture.completedFuture(combinedResults);
         }
 
         @Override
-        public CompletionStage<List> apply(List<Object> tmp) {
+        public ContinuationDecision aggregateResult(List<Object> tmp) {
             if (needsLimit) {
                 // NOTE : firstRow is zero-based
                 final int first = queryParameters.getRowSelection().getFirstRow() == null
@@ -358,14 +333,24 @@ public class HQLQueryPlan implements Serializable {
                     }
                     combinedResults.add(result);
                     if (max >= 0 && includedCount > max) {
-                        return done();
+                        return ContinuationDecision.DONE;
                     }
                 }
             } else {
                 combinedResults.addAll(tmp);
             }
 
-            return continueIfPossible();
+            return ContinuationDecision.CONTINUE;
+        }
+
+        @Override
+        public CompletableFuture<List<Object>> performQuery(QueryTranslator queryTranslator) {
+            return queryTranslator.listAsync(session, queryParameters);
+        }
+
+        @Override
+        public List<Object> getAggregatedResult() {
+            return combinedResults;
         }
 
     }
@@ -487,6 +472,48 @@ public class HQLQueryPlan implements Serializable {
 		return result;
 	}
 
+	public CompletableFuture<Integer> performExecuteUpdateAsync(
+            QueryParameters queryParameters,
+            AsyncSessionImplementor session)
+            throws HibernateException {
+		if ( TRACE_ENABLED ) {
+			LOG.tracev( "Execute update: {0}", getSourceQuery() );
+			queryParameters.traceParameters( session.getFactory() );
+		}
+		if ( translators.length != 1 ) {
+			LOG.splitQueries( getSourceQuery(), translators.length );
+		}
+        return executeAsync(new AsyncExecuteUpdateStrategy(queryParameters, session));
+	}
+
+    private static class AsyncExecuteUpdateStrategy implements AsyncMultiQueryTranslatorExecutorStrategy<Integer> {
+        private int aggregatedResultCount = 0;
+        private final QueryParameters queryParameters;
+        private final AsyncSessionImplementor session;
+
+        AsyncExecuteUpdateStrategy(QueryParameters queryParameters, AsyncSessionImplementor session) {
+            this.queryParameters = queryParameters;
+            this.session = session;
+        }
+
+        @Override
+        public ContinuationDecision aggregateResult(Integer queryResult) {
+            aggregatedResultCount += queryResult;
+            return ContinuationDecision.CONTINUE;
+        }
+
+        @Override
+        public CompletableFuture<Integer> performQuery(QueryTranslator queryTranslator) {
+            return queryTranslator.executeUpdateAsync(queryParameters, session);
+        }
+
+        @Override
+        public Integer getAggregatedResult() {
+            return aggregatedResultCount;
+        }
+
+    }
+
 	private ParameterMetadata buildParameterMetadata(ParameterTranslations parameterTranslations, String hql) {
 		final long start = TRACE_ENABLED ? System.nanoTime() : 0;
 		final ParamLocationRecognizer recognizer = ParamLocationRecognizer.parseLocations( hql );
@@ -549,4 +576,63 @@ public class HQLQueryPlan implements Serializable {
 	public boolean isSelect() {
 		return !translators[0].isManipulationStatement();
 	}
+
+    private <T> CompletableFuture<T> executeAsync(AsyncMultiQueryTranslatorExecutorStrategy<T> strategy) {
+        return new AsyncMultiQueryTranslatorExecutor<>(translators, strategy).execute();
+    }
+
+    private static class AsyncMultiQueryTranslatorExecutor<T> implements Function<T, CompletableFuture<T>> {
+
+        private final AsyncMultiQueryTranslatorExecutorStrategy<T> strategy;
+        private final Iterator<QueryTranslator> queryTranslatorIterator;
+
+        AsyncMultiQueryTranslatorExecutor(QueryTranslator[] translators,
+                                          AsyncMultiQueryTranslatorExecutorStrategy<T> strategy) {
+            this.strategy = strategy;
+            queryTranslatorIterator = Arrays.asList(translators).iterator();
+        }
+
+        public CompletableFuture<T> execute() {
+            return continueIfPossible();
+        }
+
+        private CompletableFuture<T> continueIfPossible() {
+            if (queryTranslatorIterator.hasNext()) {
+                return continueWithNextTranslator();
+            } else {
+                return done();
+            }
+        }
+
+        private CompletableFuture<T> continueWithNextTranslator() {
+            return strategy.performQuery(queryTranslatorIterator.next()).thenCompose(this);
+        }
+
+        private CompletableFuture<T> done() {
+            return CompletableFuture.completedFuture(strategy.getAggregatedResult());
+        }
+
+        @Override
+        public CompletableFuture<T> apply(T queryResult) {
+            ContinuationDecision decision = strategy.aggregateResult(queryResult);
+            if (decision == ContinuationDecision.CONTINUE) {
+                return continueIfPossible();
+            } else {
+                return done();
+            }
+        }
+
+    }
+
+    private static interface AsyncMultiQueryTranslatorExecutorStrategy<T> {
+        ContinuationDecision aggregateResult(T queryResult);
+        CompletableFuture<T> performQuery(QueryTranslator queryTranslator);
+        T getAggregatedResult();
+    }
+
+    private static enum ContinuationDecision {
+        CONTINUE,
+        DONE
+    }
+
 }

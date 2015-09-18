@@ -113,6 +113,11 @@ public interface QueryTranslator {
 	int executeUpdate(QueryParameters queryParameters, SessionImplementor session)
 			throws HibernateException;
 
+    default CompletableFuture<Integer> executeUpdateAsync(QueryParameters queryParameters, AsyncSessionImplementor asyncSession)
+            throws HibernateException {
+        throw new UnsupportedOperationException("not implemented");
+    }
+
 	/**
 	 * Returns the set of query spaces (table names) that the query refers to.
 	 *

@@ -28,9 +28,11 @@ import java.sql.PreparedStatement;
 import java.sql.SQLException;
 import java.util.Iterator;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
 
 import org.hibernate.HibernateException;
 import org.hibernate.action.internal.BulkOperationCleanupAction;
+import org.hibernate.engine.spi.AsyncSessionImplementor;
 import org.hibernate.engine.spi.QueryParameters;
 import org.hibernate.engine.spi.RowSelection;
 import org.hibernate.engine.spi.SessionFactoryImplementor;
@@ -77,46 +79,79 @@ public class BasicExecutor implements StatementExecutor {
 	public int execute(QueryParameters parameters, SessionImplementor session) throws HibernateException {
 		return doExecute( parameters, session, sql, parameterSpecifications );
 	}
-	
-	protected int doExecute(QueryParameters parameters, SessionImplementor session, String sql,
-			List parameterSpecifications) throws HibernateException {
-		BulkOperationCleanupAction action = new BulkOperationCleanupAction( session, persister );
-		if ( session.isEventSource() ) {
-			( (EventSource) session ).getActionQueue().addAction( action );
-		}
-		else {
-			action.getAfterTransactionCompletionProcess().doAfterTransactionCompletion( true, session );
-		}
 
-		PreparedStatement st = null;
-		RowSelection selection = parameters.getRowSelection();
+    @Override
+    public CompletableFuture<Integer> executeAsync(QueryParameters parameters,
+                                                   AsyncSessionImplementor session) throws HibernateException {
+        return doExecuteAsync(parameters, session, sql, parameterSpecifications);
+    }
 
-		try {
-			try {
-				st = session.getJdbcCoordinator().getStatementPreparer().prepareStatement( sql, false );
-				Iterator paramSpecItr = parameterSpecifications.iterator();
-				int pos = 1;
-				while ( paramSpecItr.hasNext() ) {
-					final ParameterSpecification paramSpec = (ParameterSpecification) paramSpecItr.next();
-					pos += paramSpec.bind( st, parameters, session, pos );
-				}
-				if ( selection != null ) {
-					if ( selection.getTimeout() != null ) {
-						st.setQueryTimeout( selection.getTimeout() );
-					}
-				}
+    protected int doExecute(QueryParameters parameters, SessionImplementor session, String sql,
+                            List parameterSpecifications) throws HibernateException {
+        prePrepareStatement(session);
 
-				return session.getJdbcCoordinator().getResultSetReturn().executeUpdate( st );
-			}
-			finally {
-				if ( st != null ) {
-					session.getJdbcCoordinator().getResourceRegistry().release( st );
-					session.getJdbcCoordinator().afterStatementExecution();
-				}
-			}
-		}
-		catch( SQLException sqle ) {
-			throw factory.getSQLExceptionHelper().convert( sqle, "could not execute update query", sql );
-		}
-	}
+        PreparedStatement st = null;
+        RowSelection selection = parameters.getRowSelection();
+
+        try {
+            try {
+                st = session.getJdbcCoordinator().getStatementPreparer().prepareStatement( sql, false );
+                applyParameters(parameters, session, parameterSpecifications, st, selection);
+
+                return session.getJdbcCoordinator().getResultSetReturn().executeUpdate( st );
+            }
+            finally {
+                if ( st != null ) {
+                    session.getJdbcCoordinator().getResourceRegistry().release( st );
+                    session.getJdbcCoordinator().afterStatementExecution();
+                }
+            }
+        }
+        catch( SQLException sqle ) {
+            throw factory.getSQLExceptionHelper().convert( sqle, "could not execute update query", sql );
+        }
+    }
+
+    protected CompletableFuture<Integer> doExecuteAsync(QueryParameters parameters, AsyncSessionImplementor session, String sql,
+                                                        List parameterSpecifications) throws HibernateException {
+        prePrepareStatement(session);
+
+        PreparedStatement st;
+        RowSelection selection = parameters.getRowSelection();
+
+        try {
+            st = session.createRecordingPreparedStatement(sql);
+            applyParameters(parameters, session, parameterSpecifications, st, selection);
+
+            return session.executeUpdateAsync(st);
+        }
+        catch( SQLException sqle ) {
+            throw factory.getSQLExceptionHelper().convert( sqle, "could not execute update query", sql );
+        }
+    }
+
+    private void prePrepareStatement(SessionImplementor session) {
+        BulkOperationCleanupAction action = new BulkOperationCleanupAction( session, persister );
+        if ( session.isEventSource() ) {
+            ( (EventSource) session ).getActionQueue().addAction( action );
+        }
+        else {
+            action.getAfterTransactionCompletionProcess().doAfterTransactionCompletion( true, session );
+        }
+    }
+
+    private void applyParameters(QueryParameters parameters, SessionImplementor session, List parameterSpecifications, PreparedStatement st, RowSelection selection) throws SQLException {
+        Iterator paramSpecItr = parameterSpecifications.iterator();
+        int pos = 1;
+        while ( paramSpecItr.hasNext() ) {
+            final ParameterSpecification paramSpec = (ParameterSpecification) paramSpecItr.next();
+            pos += paramSpec.bind( st, parameters, session, pos );
+        }
+        if ( selection != null ) {
+            if ( selection.getTimeout() != null ) {
+                st.setQueryTimeout( selection.getTimeout() );
+            }
+        }
+    }
+
 }
