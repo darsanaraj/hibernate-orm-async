@@ -3,6 +3,7 @@ package org.hibernate.jpa.internal.async;
 
 import com.github.mauricio.async.db.Configuration;
 import com.jakobk.async.db.ConfigurationBuilder;
+import com.jakobk.async.db.DbConnectionPool;
 import com.jakobk.async.db.postgresql.PostgresqlConnection;
 import com.jakobk.async.db.postgresql.PostgresqlConnectionBuilder;
 import org.hibernate.CacheMode;
@@ -50,13 +51,14 @@ import java.util.concurrent.CompletableFuture;
  */
 public class AsyncSessionImpl implements AsyncSessionImplementor {
 
-
     private final SessionFactoryImplementor sessionFactory;
+    private final DbConnectionPool dbConnectionPool;
 
     private final PersistenceContext temporaryPersistenceContext = new StatefulPersistenceContext( this );
 
-    public AsyncSessionImpl(SessionFactoryImplementor sessionFactory) {
+    public AsyncSessionImpl(SessionFactoryImplementor sessionFactory, DbConnectionPool dbConnectionPool) {
         this.sessionFactory = sessionFactory;
+        this.dbConnectionPool = dbConnectionPool;
     }
 
     @Override
@@ -69,20 +71,8 @@ public class AsyncSessionImpl implements AsyncSessionImplementor {
         if (recordingPreparedStatement instanceof RecordingPreparedStatement) {
             RecordingPreparedStatement st = (RecordingPreparedStatement) recordingPreparedStatement;
 
-            Configuration configuration = new ConfigurationBuilder()
-                    .withUsername("postgres")
-                    .withPassword("postgres")
-                    .withDatabase("niotest")
-                    .build();
-
-            PostgresqlConnection postgresqlConnection = new PostgresqlConnectionBuilder().withConfiguration(configuration).build();
-
-            return postgresqlConnection.connect()
-                    .thenCompose(c -> c.sendPreparedStatement(st.getSql(), st.getParameters()))
-                    .thenCompose(result -> {
-                        ResultSet resultSet = result.getResultSet().get();
-                        return postgresqlConnection.disconnect().thenApply(connection -> resultSet);
-                    });
+            return dbConnectionPool.sendPreparedStatement(st.getSql(), st.getParameters())
+                    .thenApply(result -> result.getResultSet().get());
         } else {
             throw new IllegalArgumentException("PreparedStatement must be a RecordingPreparedStatement");
         }
@@ -93,17 +83,8 @@ public class AsyncSessionImpl implements AsyncSessionImplementor {
         if (recordingPreparedStatement instanceof RecordingPreparedStatement) {
             RecordingPreparedStatement st = (RecordingPreparedStatement) recordingPreparedStatement;
 
-            Configuration configuration = new ConfigurationBuilder()
-                    .withUsername("postgres")
-                    .withPassword("postgres")
-                    .withDatabase("niotest")
-                    .build();
-
-            PostgresqlConnection postgresqlConnection = new PostgresqlConnectionBuilder().withConfiguration(configuration).build();
-
-            return postgresqlConnection.connect()
-                    .thenCompose(c -> c.sendPreparedStatement(st.getSql(), st.getParameters()))
-                    .thenCompose(result -> postgresqlConnection.disconnect().thenApply(connection -> (int) result.getAffectedRowCount()));
+            return dbConnectionPool.sendPreparedStatement(st.getSql(), st.getParameters())
+                    .thenApply(result -> (int) result.getAffectedRowCount());
         } else {
             throw new IllegalArgumentException("PreparedStatement must be a RecordingPreparedStatement");
         }

@@ -74,7 +74,6 @@ public class AsyncEntityManagerTest extends PackagingTestCase {
             em.persist(new AsyncPerson("jakob"));
             em.flush();
             em.getTransaction().commit();
-            em.close();
         } finally {
             if (em != null) {
                 em.close();

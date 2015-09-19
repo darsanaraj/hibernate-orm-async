@@ -1,18 +1,14 @@
 package org.hibernate.jpa.internal.async;
 
 import com.jakobk.async.db.DbConnectionPool;
-import org.hibernate.HibernateException;
-import org.hibernate.engine.query.spi.HQLQueryPlan;
 import org.hibernate.engine.spi.AsyncSessionImplementor;
-import org.hibernate.engine.spi.QueryParameters;
 import org.hibernate.engine.spi.SessionFactoryImplementor;
-import org.hibernate.hql.spi.QueryTranslator;
 
 import javax.persistence.async.AsyncEntityManager;
 import javax.persistence.async.AsyncEntityTransaction;
 import javax.persistence.async.AsyncQuery;
-import java.util.Collections;
 import java.util.concurrent.CompletableFuture;
+import java.util.function.Function;
 
 /**
  * Asynchronous EntityManager implementation.
@@ -23,25 +19,17 @@ public class AsyncEntityManagerImpl implements AsyncEntityManager, AsyncSessionH
 
     private final DbConnectionPool dbConnectionPool;
     private final SessionFactoryImplementor sessionFactory;
+    private final AsyncSessionImpl asyncSession;
 
     public AsyncEntityManagerImpl(DbConnectionPool dbConnectionPool, SessionFactoryImplementor sessionFactory) {
         this.dbConnectionPool = dbConnectionPool;
         this.sessionFactory = sessionFactory;
+        this.asyncSession = new AsyncSessionImpl(sessionFactory, dbConnectionPool);
     }
 
     @Override
-    public CompletableFuture<AsyncEntityTransaction> beginTransaction() {
-        return null;
-    }
-
-    @Override
-    public void persist() {
-
-    }
-
-    @Override
-    public CompletableFuture<Void> flush() {
-        return null;
+    public <A> CompletableFuture<A> inTransaction(Function<AsyncEntityTransaction, CompletableFuture<A>> txFunction) {
+        throw new IllegalStateException("not implemented");   // TODO jakobk
     }
 
     @Override
@@ -51,11 +39,7 @@ public class AsyncEntityManagerImpl implements AsyncEntityManager, AsyncSessionH
 
     @Override
     public void close() {
-
-    }
-
-    protected DbConnectionPool getDbConnectionPool() {
-        return dbConnectionPool;
+        // nothing to do here yet
     }
 
     protected SessionFactoryImplementor getSessionFactory() {
@@ -64,6 +48,6 @@ public class AsyncEntityManagerImpl implements AsyncEntityManager, AsyncSessionH
 
     @Override
     public AsyncSessionImplementor getAsyncSession() {
-        return new AsyncSessionImpl(sessionFactory);
+        return asyncSession;
     }
 }

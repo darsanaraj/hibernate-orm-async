@@ -26,6 +26,7 @@ package org.hibernate.jpa.internal;
 import com.jakobk.async.db.DbConnectionPool;
 import org.hibernate.Hibernate;
 import org.hibernate.SessionFactory;
+import org.hibernate.async.spi.DbConnectionPoolProvider;
 import org.hibernate.boot.spi.MetadataImplementor;
 import org.hibernate.cache.spi.RegionFactory;
 import org.hibernate.cfg.annotations.NamedEntityGraphDefinition;
@@ -51,7 +52,6 @@ import org.hibernate.jpa.internal.async.AsyncEntityManagerImpl;
 import org.hibernate.jpa.internal.metamodel.EntityTypeImpl;
 import org.hibernate.jpa.internal.metamodel.MetamodelImpl;
 import org.hibernate.jpa.internal.util.PersistenceUtilHelper;
-import org.hibernate.jpa.spi.async.DbConnectionPoolProvider;
 import org.hibernate.metadata.ClassMetadata;
 import org.hibernate.procedure.ProcedureCall;
 import org.jboss.logging.Logger;
@@ -115,7 +115,7 @@ public class EntityManagerFactoryImpl implements HibernateEntityManagerFactory {
 	private final transient PersistenceUtilHelper.MetadataCache cache = new PersistenceUtilHelper.MetadataCache();
 	private final transient Map<String,EntityGraphImpl> entityGraphs = new ConcurrentHashMap<String, EntityGraphImpl>();
 
-    private DbConnectionPool dbConnectionPool;
+    private transient DbConnectionPool dbConnectionPool;
 
 	public EntityManagerFactoryImpl(
 			String persistenceUnitName,
@@ -298,18 +298,17 @@ public class EntityManagerFactoryImpl implements HibernateEntityManagerFactory {
 
     @Override
     public AsyncEntityManager createAsyncEntityManager() {
-        // TODO dbConnectionPool must be per persistence-unit
-//        if (dbConnectionPool == null) {
-//            synchronized (this) {
-//                if (dbConnectionPool == null) {
-//                    dbConnectionPool = selectDbConnectionPoolProvider().createDbConnectionPool(properties);
-//                }
-//            }
-//        }
+        if (dbConnectionPool == null) {
+            synchronized (this) {
+                if (dbConnectionPool == null) {
+                    dbConnectionPool = selectDbConnectionPoolProvider().createDbConnectionPool(properties);
+                }
+            }
+        }
         return new AsyncEntityManagerImpl(dbConnectionPool, sessionFactory);
     }
 
-    private DbConnectionPoolProvider selectDbConnectionPoolProvider() {
+    protected DbConnectionPoolProvider selectDbConnectionPoolProvider() {
         String providerName = (String) properties.get(AvailableSettings.ASYNC_DB_PROVIDER);
         if (providerName == null || providerName.isEmpty()) {
             throw new IllegalStateException(AvailableSettings.ASYNC_DB_PROVIDER + " not set");
@@ -385,7 +384,14 @@ public class EntityManagerFactoryImpl implements HibernateEntityManagerFactory {
 		validateNotClosed();
 
 		sessionFactory.close();
-		EntityManagerFactoryRegistry.INSTANCE.removeEntityManagerFactory(entityManagerFactoryName, this);
+        if (dbConnectionPool != null) {
+            try {
+                dbConnectionPool.disconnect().get();
+            } catch (Exception e) {
+                log.error("Exception while disconnecting from async db connection pool", e);
+            }
+        }
+        EntityManagerFactoryRegistry.INSTANCE.removeEntityManagerFactory(entityManagerFactoryName, this);
 	}
 
 	@Override

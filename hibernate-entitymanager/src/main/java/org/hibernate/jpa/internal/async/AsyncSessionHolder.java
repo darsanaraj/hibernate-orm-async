@@ -5,7 +5,7 @@ import org.hibernate.engine.spi.AsyncSessionImplementor;
 /**
  *
  */
-public interface AsyncSessionHolder {
+public interface AsyncSessionHolder {  // TODO jakobk: really necessary??
 
     public AsyncSessionImplementor getAsyncSession();
 

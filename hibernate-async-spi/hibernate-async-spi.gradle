@@ -1,0 +1,12 @@
+dependencies {
+    compile( libraries.postgresql_async )
+}
+
+mavenPom {
+    name = 'Hibernate Async SPI'
+    description = 'Hibernate Asynchronous Database Connection SPI'
+}
+
+def osgiDescription() {
+	return mavenPom.description
+}
