@@ -1,11 +1,6 @@
 package org.hibernate.jpa.internal.async;
 
-
-import com.github.mauricio.async.db.Configuration;
-import com.jakobk.async.db.ConfigurationBuilder;
 import com.jakobk.async.db.DbConnectionPool;
-import com.jakobk.async.db.postgresql.PostgresqlConnection;
-import com.jakobk.async.db.postgresql.PostgresqlConnectionBuilder;
 import org.hibernate.CacheMode;
 import org.hibernate.Criteria;
 import org.hibernate.FlushMode;
@@ -39,15 +34,21 @@ import java.io.Serializable;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
-import java.sql.SQLException;
-import java.util.Arrays;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 
 /**
+ * Asynchronous counterpart of {@link org.hibernate.internal.SessionImpl}.
  *
+ * Most of the methods from {@link org.hibernate.engine.spi.SessionImplementor} throw an
+ * {@link IllegalStateException}, however, some are implemented with (mock) implementations in order to suffice
+ * the internal API requirements of hibernate, when using (mostly) existing code to translate and execute JPQL queries.
+ *
+ * Implements the methods from {@link org.hibernate.engine.spi.AsyncSessionImplementor}
+ *
+ * @author Jakob Korherr
  */
 public class AsyncSessionImpl implements AsyncSessionImplementor {
 

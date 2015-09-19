@@ -390,6 +390,7 @@ public class EntityManagerFactoryImpl implements HibernateEntityManagerFactory {
             } catch (Exception e) {
                 log.error("Exception while disconnecting from async db connection pool", e);
             }
+            dbConnectionPool = null;  // after disconnect has been called, we should get rid of the instance
         }
         EntityManagerFactoryRegistry.INSTANCE.removeEntityManagerFactory(entityManagerFactoryName, this);
 	}

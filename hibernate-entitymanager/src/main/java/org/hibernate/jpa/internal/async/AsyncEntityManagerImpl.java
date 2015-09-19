@@ -15,7 +15,7 @@ import java.util.function.Function;
  *
  * @author Jakob Korherr
  */
-public class AsyncEntityManagerImpl implements AsyncEntityManager, AsyncSessionHolder {
+public class AsyncEntityManagerImpl implements AsyncEntityManager {
 
     private final DbConnectionPool dbConnectionPool;
     private final SessionFactoryImplementor sessionFactory;
@@ -34,7 +34,7 @@ public class AsyncEntityManagerImpl implements AsyncEntityManager, AsyncSessionH
 
     @Override
     public <T> AsyncQuery<T> createQuery(String qlString, Class<T> resultClass) {
-        return new AsyncQueryImpl<>(qlString, resultClass, this, this);
+        return new AsyncQueryImpl<>(qlString, resultClass, this);
     }
 
     @Override
@@ -46,7 +46,6 @@ public class AsyncEntityManagerImpl implements AsyncEntityManager, AsyncSessionH
         return sessionFactory;
     }
 
-    @Override
     public AsyncSessionImplementor getAsyncSession() {
         return asyncSession;
     }

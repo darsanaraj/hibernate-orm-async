@@ -29,6 +29,8 @@ import java.util.List;
 
 /**
  * PreparedStatement stub, which is not actually a real statement, but captures the sql, parameters, and types set on it.
+ *
+ * @author Jakob Korherr
  */
 public class RecordingPreparedStatement implements PreparedStatement {
 
