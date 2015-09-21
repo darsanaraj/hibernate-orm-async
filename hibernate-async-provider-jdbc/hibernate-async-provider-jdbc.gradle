@@ -1,0 +1,13 @@
+dependencies {
+    compile( project( ':hibernate-async-spi' ) )
+    compile( project( ':hibernate-core' ))
+}
+
+mavenPom {
+    name = 'Hibernate Async Provider Simulator for JDBC'
+    description = 'Hibernate Asynchronous Database Connection Provider, simulating asynchronous db access over JDBC'
+}
+
+def osgiDescription() {
+	return mavenPom.description
+}

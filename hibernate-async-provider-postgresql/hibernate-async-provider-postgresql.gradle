@@ -4,7 +4,7 @@ dependencies {
 }
 
 mavenPom {
-    name = 'Hibernate PostgreSQL Async Provider'
+    name = 'Hibernate Async Provider for PostgreSQL'
     description = 'Hibernate Asynchronous Database Connection Provider for PostgreSQL'
 }
 

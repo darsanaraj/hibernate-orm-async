@@ -13,7 +13,8 @@ include 'hibernate-java8'
 include 'hibernate-osgi'
 
 include 'hibernate-async-spi'
-include 'hibernate-postgresql-async-provider'
+include 'hibernate-async-provider-jdbc'
+include 'hibernate-async-provider-postgresql'
 
 include 'hibernate-c3p0'
 include 'hibernate-proxool'

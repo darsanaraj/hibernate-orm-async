@@ -301,7 +301,7 @@ public class EntityManagerFactoryImpl implements HibernateEntityManagerFactory {
         if (dbConnectionPool == null) {
             synchronized (this) {
                 if (dbConnectionPool == null) {
-                    dbConnectionPool = selectDbConnectionPoolProvider().createDbConnectionPool(properties);
+                    dbConnectionPool = selectDbConnectionPoolProvider().createDbConnectionPool(sessionFactory, properties);
                 }
             }
         }

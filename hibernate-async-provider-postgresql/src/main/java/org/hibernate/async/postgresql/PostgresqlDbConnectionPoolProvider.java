@@ -5,6 +5,7 @@ import com.jakobk.async.db.ConfigurationBuilder;
 import com.jakobk.async.db.DbConnectionPool;
 import com.jakobk.async.db.postgresql.PostgresqlConnectionPool;
 import org.hibernate.async.spi.DbConnectionPoolProvider;
+import org.hibernate.engine.spi.SessionFactoryImplementor;
 
 import java.util.Map;
 
@@ -19,7 +20,7 @@ public class PostgresqlDbConnectionPoolProvider implements DbConnectionPoolProvi
     private static final String DATABASE_PROPERTY_KEY = PROPERTY_PREFIX + "database";
 
     @Override
-    public DbConnectionPool createDbConnectionPool(Map<String, Object> properties) {
+    public DbConnectionPool createDbConnectionPool(SessionFactoryImplementor sessionFactory, Map<String, Object> properties) {
         Configuration configuration = new ConfigurationBuilder()
                 .withUsername(getRequiredProperty(USERNAME_PROPERTY_KEY, properties))
                 .withPassword(getRequiredProperty(PASSWORD_PROPERTY_KEY, properties))

@@ -1,4 +1,5 @@
 dependencies {
+    compile( project( ':hibernate-core' ) )
     compile( libraries.postgresql_async )
 }
 

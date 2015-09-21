@@ -1,6 +1,7 @@
 package org.hibernate.async.spi;
 
 import com.jakobk.async.db.DbConnectionPool;
+import org.hibernate.engine.spi.SessionFactoryImplementor;
 
 import java.util.Map;
 
@@ -15,7 +16,8 @@ import java.util.Map;
  */
 public interface DbConnectionPoolProvider {
 
-    public DbConnectionPool createDbConnectionPool(Map<String, Object> properties);  // TODO integrate DbConnection interface into Hibernate SPI
+    // TODO integrate DbConnection interface into Hibernate SPI
+    public DbConnectionPool createDbConnectionPool(SessionFactoryImplementor sessionFactory, Map<String, Object> properties);
 
     public String getName();
 
