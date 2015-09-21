@@ -56,7 +56,25 @@ public class AsyncEntityManagerTest extends PackagingTestCase {
                 .getSingleResult().get();
         System.out.println(rowNew);
 
+        try {
+            aem.inTransaction(tx ->
+                    tx.createQuery("delete from AsyncPerson a where a.name = :name", Void.class)
+                            .setParameter("name", "steffi")
+                            .executeUpdate()
+                            .thenApply(deleteCnt -> {
+                                System.out.println("DELETED " + deleteCnt);
+                                tx.setRollbackOnly();
+                                return deleteCnt;
+                            }))
+                    .get();
+        } catch (InterruptedException | ExecutionException e) {}
+
         Integer deleteCnt = aem.createQuery("delete from AsyncPerson a where a.name = :name", Void.class)
+                .setParameter("name", "steffi")
+                .executeUpdate().get();
+        System.out.println("DELETED " + deleteCnt);
+
+        deleteCnt = aem.createQuery("delete from AsyncPerson a where a.name = :name", Void.class)
                 .setParameter("name", "steffi")
                 .executeUpdate().get();
         System.out.println("DELETED " + deleteCnt);

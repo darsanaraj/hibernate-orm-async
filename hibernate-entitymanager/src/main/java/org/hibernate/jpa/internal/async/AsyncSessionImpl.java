@@ -1,6 +1,6 @@
 package org.hibernate.jpa.internal.async;
 
-import com.jakobk.async.db.DbConnectionPool;
+import com.jakobk.async.db.DbConnection;
 import org.hibernate.CacheMode;
 import org.hibernate.Criteria;
 import org.hibernate.FlushMode;
@@ -46,20 +46,20 @@ import java.util.concurrent.CompletableFuture;
  * {@link IllegalStateException}, however, some are implemented with (mock) implementations in order to suffice
  * the internal API requirements of hibernate, when using (mostly) existing code to translate and execute JPQL queries.
  *
- * Implements the methods from {@link org.hibernate.engine.spi.AsyncSessionImplementor}
+ * Implements the methods from {@link org.hibernate.engine.spi.AsyncSessionImplementor}.
  *
  * @author Jakob Korherr
  */
 public class AsyncSessionImpl implements AsyncSessionImplementor {
 
     private final SessionFactoryImplementor sessionFactory;
-    private final DbConnectionPool dbConnectionPool;
+    private final DbConnection dbConnection;
 
     private final PersistenceContext temporaryPersistenceContext = new StatefulPersistenceContext( this );
 
-    public AsyncSessionImpl(SessionFactoryImplementor sessionFactory, DbConnectionPool dbConnectionPool) {
+    public AsyncSessionImpl(SessionFactoryImplementor sessionFactory, DbConnection dbConnection) {
         this.sessionFactory = sessionFactory;
-        this.dbConnectionPool = dbConnectionPool;
+        this.dbConnection = dbConnection;
     }
 
     @Override
@@ -72,7 +72,7 @@ public class AsyncSessionImpl implements AsyncSessionImplementor {
         if (recordingPreparedStatement instanceof RecordingPreparedStatement) {
             RecordingPreparedStatement st = (RecordingPreparedStatement) recordingPreparedStatement;
 
-            return dbConnectionPool.sendPreparedStatement(st.getSql(), st.getParameters())
+            return dbConnection.sendPreparedStatement(st.getSql(), st.getParameters())
                     .thenApply(result -> result.getResultSet().get());
         } else {
             throw new IllegalArgumentException("PreparedStatement must be a RecordingPreparedStatement");
@@ -84,7 +84,7 @@ public class AsyncSessionImpl implements AsyncSessionImplementor {
         if (recordingPreparedStatement instanceof RecordingPreparedStatement) {
             RecordingPreparedStatement st = (RecordingPreparedStatement) recordingPreparedStatement;
 
-            return dbConnectionPool.sendPreparedStatement(st.getSql(), st.getParameters())
+            return dbConnection.sendPreparedStatement(st.getSql(), st.getParameters())
                     .thenApply(result -> (int) result.getAffectedRowCount());
         } else {
             throw new IllegalArgumentException("PreparedStatement must be a RecordingPreparedStatement");

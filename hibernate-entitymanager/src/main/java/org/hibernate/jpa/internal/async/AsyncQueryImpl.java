@@ -35,21 +35,21 @@ import java.util.concurrent.CompletableFuture;
 public class AsyncQueryImpl<ResultType> implements AsyncQuery<ResultType> {
 
     private final Class<ResultType> resultClass;
-    private final AsyncEntityManagerImpl aem;
+    private final AsyncSessionImplementor asyncSession;
     private final AsyncHibernateQueryDelegate queryDelegate;
     private final AsyncJpaQueryDelegate jpaQueryDelegate;
 
-    public AsyncQueryImpl(String qlString, Class<ResultType> resultClass, AsyncEntityManagerImpl aem) {
+    public AsyncQueryImpl(String qlString, Class<ResultType> resultClass, AsyncSessionImplementor asyncSession) {
         this.resultClass = resultClass;
-        this.aem = aem;
+        this.asyncSession = asyncSession;
 
         HQLQueryPlan hqlQueryPlan = getHQLQueryPlan(qlString, false);
-        queryDelegate = new AsyncHibernateQueryDelegate(qlString, aem.getAsyncSession(), hqlQueryPlan.getParameterMetadata());
+        queryDelegate = new AsyncHibernateQueryDelegate(qlString, asyncSession, hqlQueryPlan.getParameterMetadata());
         jpaQueryDelegate = new AsyncJpaQueryDelegate(queryDelegate);
     }
 
     protected HQLQueryPlan getHQLQueryPlan(String query, boolean shallow) throws HibernateException {
-        return aem.getSessionFactory().getQueryPlanCache().getHQLQueryPlan(query, shallow, Collections.emptyMap());
+        return asyncSession.getFactory().getQueryPlanCache().getHQLQueryPlan(query, shallow, Collections.emptyMap());
     }
 
     @Override
@@ -57,7 +57,7 @@ public class AsyncQueryImpl<ResultType> implements AsyncQuery<ResultType> {
         Map<String, TypedValue> namedParamsCopy = queryDelegate.getNamedParams();
         String expandedQuery = queryDelegate.expandParameterLists(namedParamsCopy);  // side-effect: also adds named params to map!
         HQLQueryPlan hqlQueryPlan = getHQLQueryPlan(expandedQuery, false);
-        return hqlQueryPlan.performListAsync(queryDelegate.getQueryParameters(namedParamsCopy), aem.getAsyncSession())
+        return hqlQueryPlan.performListAsync(queryDelegate.getQueryParameters(namedParamsCopy), asyncSession)
                 .thenApply(uncheckedList -> {
                     @SuppressWarnings("unchecked")
                     List<ResultType> checkedList = (List<ResultType>) uncheckedList;
@@ -70,17 +70,14 @@ public class AsyncQueryImpl<ResultType> implements AsyncQuery<ResultType> {
         return getResultList().thenApply(result -> {
             if ( result.size() == 0 ) {
                 throw new NoResultException( "No entity found for query" );
-            }
-            else if ( result.size() > 1 ) {
+            } else if ( result.size() > 1 ) {
                 final Set<ResultType> uniqueResult = new HashSet<>(result);
                 if ( uniqueResult.size() > 1 ) {
                     throw new NonUniqueResultException( "result returns more than one elements" );
-                }
-                else {
+                } else {
                     return uniqueResult.iterator().next();
                 }
-            }
-            else {
+            } else {
                 return result.get( 0 );
             }
         });
@@ -91,7 +88,7 @@ public class AsyncQueryImpl<ResultType> implements AsyncQuery<ResultType> {
         Map<String, TypedValue> namedParamsCopy = queryDelegate.getNamedParams();
         String expandedQuery = queryDelegate.expandParameterLists(namedParamsCopy);  // side-effect: also adds named params to map!
         HQLQueryPlan hqlQueryPlan = getHQLQueryPlan(expandedQuery, false);
-        return hqlQueryPlan.performExecuteUpdateAsync(queryDelegate.getQueryParameters(namedParamsCopy), aem.getAsyncSession());
+        return hqlQueryPlan.performExecuteUpdateAsync(queryDelegate.getQueryParameters(namedParamsCopy), asyncSession);
     }
 
     @Override

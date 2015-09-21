@@ -1,9 +1,10 @@
 package org.hibernate.jpa.internal.async;
 
 import com.jakobk.async.db.DbConnectionPool;
-import org.hibernate.engine.spi.AsyncSessionImplementor;
+import org.hibernate.HibernateException;
 import org.hibernate.engine.spi.SessionFactoryImplementor;
 
+import javax.persistence.RollbackException;
 import javax.persistence.async.AsyncEntityManager;
 import javax.persistence.async.AsyncEntityTransaction;
 import javax.persistence.async.AsyncQuery;
@@ -29,12 +30,30 @@ public class AsyncEntityManagerImpl implements AsyncEntityManager {
 
     @Override
     public <A> CompletableFuture<A> inTransaction(Function<AsyncEntityTransaction, CompletableFuture<A>> txFunction) {
-        throw new IllegalStateException("not implemented");   // TODO jakobk
+        return dbConnectionPool.inTransaction(connection -> {
+            AsyncEntityTransactionImpl tx = new AsyncEntityTransactionImpl(new AsyncSessionImpl(sessionFactory, connection));
+            return txFunction.apply(tx).whenComplete((result, throwable) -> {
+                try {
+                    if (throwable != null) {
+                        if (throwable instanceof RuntimeException) {
+                            throw (RuntimeException) throwable;
+                        } else {
+                            throw new HibernateException(throwable);
+                        }
+                    }
+                    if (tx.getRollbackOnly()) {
+                        throw new RollbackException("Rollback transaction, because rollbackOnly is true");
+                    }
+                } finally {
+                    tx.close();
+                }
+            });
+        });
     }
 
     @Override
     public <T> AsyncQuery<T> createQuery(String qlString, Class<T> resultClass) {
-        return new AsyncQueryImpl<>(qlString, resultClass, this);
+        return new AsyncQueryImpl<>(qlString, resultClass, asyncSession);
     }
 
     @Override
@@ -42,11 +61,4 @@ public class AsyncEntityManagerImpl implements AsyncEntityManager {
         // nothing to do here yet
     }
 
-    protected SessionFactoryImplementor getSessionFactory() {
-        return sessionFactory;
-    }
-
-    public AsyncSessionImplementor getAsyncSession() {
-        return asyncSession;
-    }
 }
