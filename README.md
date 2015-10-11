@@ -1,3 +1,37 @@
+#hibernate-orm-async
+
+Fork of hibernate-orm, which adds asynchronous, non-blocking database access features to Hibernate ORM. It implements the modified asynchronous JPA API (https://github.com/jakobk/hibernate-jpa-api-async) by using https://github.com/jakobk/db-async-java as the underlying asynchronous database access layer.
+
+Currently supported asynchronous operations include:
+* Asynchronous JPQL queries (SELECT, INSERT, UPDATE, DELETE)
+* Transaction management
+
+The implementation makes heavy use of the CompletableFuture API of Java 8.
+
+##Example
+
+```java
+AsyncEntityManager aem = emf.createAsyncEntityManager();
+aem.createQuery("select a from AsyncPerson a where a.name = :name", AsyncPerson.class)
+        .setParameter("name", "jakob")
+        .setFirstResult(0)
+        .setMaxResults(10)
+        .getResultList()
+        .thenAccept(result -> {
+            for (AsyncPerson asyncPerson : result) {
+                System.out.println(asyncPerson);
+            }
+        });
+```
+
+
+##Disclaimer
+
+This project is highly experimental. Although it works in (simple) tests, it has never been tested in production. Use at your own risk! 
+
+
+#Original README from hibernate-orm
+
 How to build
 ============
 
