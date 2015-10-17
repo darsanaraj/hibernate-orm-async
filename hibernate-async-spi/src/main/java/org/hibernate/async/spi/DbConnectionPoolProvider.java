@@ -16,7 +16,6 @@ import java.util.Map;
  */
 public interface DbConnectionPoolProvider {
 
-    // TODO integrate DbConnection interface into Hibernate SPI
     public DbConnectionPool createDbConnectionPool(SessionFactoryImplementor sessionFactory, Map<String, Object> properties);
 
     public String getName();

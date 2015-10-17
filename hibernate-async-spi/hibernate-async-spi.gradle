@@ -1,6 +1,6 @@
 dependencies {
     compile( project( ':hibernate-core' ) )
-    compile( libraries.postgresql_async )
+    compile( "com.jakobk:db-async-java-api:1.0.0-SNAPSHOT" )
 }
 
 mavenPom {
