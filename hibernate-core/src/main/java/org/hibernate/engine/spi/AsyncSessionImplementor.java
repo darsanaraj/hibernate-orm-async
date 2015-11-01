@@ -23,6 +23,4 @@ public interface AsyncSessionImplementor extends SessionImplementor {
 
     CompletableFuture<Integer> executeUpdateAsync(PreparedStatement recordingPreparedStatement);
 
-    // TODO async db methods
-
 }
